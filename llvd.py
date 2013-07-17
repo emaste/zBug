@@ -12,6 +12,13 @@ arguments = sys.argv[2:]
 
 app = QtGui.QApplication(sys.argv)
 
+font = QtGui.QFont()
+font.setPointSize(12)
+font.setFamily("Courier")
+
+boldFont = QtGui.QFont(font)
+boldFont.setBold(True)
+
 class LineNumberArea(QtGui.QWidget):
   def __init__(self, codeEditor):
     QtGui.QWidget.__init__(self, codeEditor)
@@ -26,6 +33,8 @@ class LineNumberArea(QtGui.QWidget):
 class CodeEditor(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
+
+    self.setFont(font)
 
     lineNumberArea = LineNumberArea(self)
     self.__lineNumberArea = lineNumberArea
@@ -106,14 +115,50 @@ class CodeEditor(QtGui.QPlainTextEdit):
     block = document.findBlockByLineNumber(lineNumber-1)
     textCursor = self.textCursor()
     textCursor.setPosition(block.position())
-    self.setFocus()
     self.setTextCursor(textCursor)
 
 codeDisplay = CodeEditor()
 codeDisplay.setReadOnly(True)
 
+lineEdit = QtGui.QLineEdit()
+
+class OutputDisplay(QtGui.QTextEdit):
+  def __init__(self, parent=None):
+    QtGui.QTextEdit.__init__(self, parent)
+    self.setFont(font)
+
+  def appendCommand(self, text):
+    self.setTextColor(QtCore.Qt.blue)
+    cursor = self.textCursor()
+    cursor.insertText("> " + text + "\n")
+
+  def appendDebuggerOutput(self, text):
+    self.setTextColor(QtCore.Qt.green)
+    cursor = self.textCursor()
+    cursor.insertText(text + "\n")
+
+  def appendDebuggerErrorOutput(self, text):
+    self.setTextColor(QtCore.Qt.red)
+    cursor = self.textCursor()
+    cursor.insertText(text + "\n")
+
+  def appendProgramOutput(self, text):
+    self.setTextColor(QtCore.Qt.black)
+    cursor = self.textCursor()
+    cursor.insertText(text + "\n")
+
+outputDisplay = OutputDisplay()
+
+centralLayout = QtGui.QVBoxLayout()
+centralLayout.addWidget(codeDisplay)
+centralLayout.addWidget(outputDisplay)
+centralLayout.addWidget(lineEdit)
+
+centralWidget = QtGui.QWidget()
+centralWidget.setLayout(centralLayout)
+
 mainWindow = QtGui.QMainWindow()
-mainWindow.setCentralWidget(codeDisplay)
+mainWindow.setCentralWidget(centralWidget)
 mainWindow.show()
 
 files = {}
@@ -134,13 +179,15 @@ process = target.LaunchSimple (arguments, None, os.getcwd())
 if not process or process.GetProcessID() == lldb.LLDB_INVALID_PROCESS_ID:
   print "Launch failed!"
   sys.exit(1)
-else:
-  pid = process.GetProcessID()
-  listener = debugger.GetListener()
+
+pid = process.GetProcessID()
+listener = debugger.GetListener()
+
+def handleDebuggerEvents():
   done = False
-  while not done:
+  if not done:
     event = lldb.SBEvent()
-    if listener.WaitForEvent(lldb.UINT32_MAX, event):
+    if listener.GetNextEvent(event):
       if event.GetBroadcaster().GetName() == "lldb.process":
         state = lldb.SBProcess.GetStateFromEvent (event)
         if state == lldb.eStateInvalid:
@@ -171,8 +218,6 @@ else:
                 # index = compileUnit.FindLineEntryIndex()
                 # print index
                 print 'thread=%s frame=%s' % (thread, frame)
-              print "continuing process %u" % (pid)
-              process.Continue()
             elif state == lldb.eStateExited:
                 exit_desc = process.GetExitDescription()
                 if exit_desc:
@@ -203,26 +248,35 @@ else:
                 print "process launching"
       else:
           print 'Non-process event = %s' % (event)
-    else:
-        # timeout waiting for an event
-        print "no process event for %u seconds, killing the process..." % (options.event_timeout)
-        done = True
-
-# Now that we are done dump the stdout and stderr
-process_stdout = process.GetSTDOUT(1024)
-if process_stdout:
-  print "Process STDOUT:\n%s" % (process_stdout)
-  while process_stdout:
-    process_stdout = process.GetSTDOUT(1024)
-    print process_stdout
-process_stderr = process.GetSTDERR(1024)
-if process_stderr:
-  print "Process STDERR:\n%s" % (process_stderr)
-  while process_stderr:
+  process_stdout = process.GetSTDOUT(1024)
+  if process_stdout:
+    outputDisplay.appendProgramOutput(process_stdout)
+    while process_stdout:
+      process_stdout = process.GetSTDOUT(1024)
+      outputDisplay.appendProgramOutput(process_stdout)
+  process_stderr = process.GetSTDERR(1024)
+  if process_stderr:
+    outputDisplay.appendProgramOutput(process_stderr)
+    while process_stderr:
       process_stderr = process.GetSTDERR(1024)
-      print process_stderr
-process.Kill() # kill the process
+      outputDisplay.appendProgramOutput(process_stderr)
 
-print "final event loop"
+def executeCommand():
+  command = str(lineEdit.text())
+  outputDisplay.appendCommand(command)
+  lineEdit.clear()
+  return_obj = lldb.SBCommandReturnObject()
+  command_interpreter.HandleCommand(command, return_obj)
+  if return_obj.Succeeded():
+    outputDisplay.appendDebuggerOutput(return_obj.GetOutput())
+  else:
+    outputDisplay.appendDebuggerErrorOutput(return_obj.GetError())
+lineEdit.returnPressed.connect(executeCommand)
+
+timer = QtCore.QTimer()
+timer.setInterval(100)
+timer.timeout.connect(handleDebuggerEvents)
+timer.start()
+
 sys.exit(app.exec_())
 
