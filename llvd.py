@@ -22,15 +22,22 @@ boldFont.setBold(True)
 class StackViewItem(QtGui.QTreeWidgetItem):
   def __init__(self):
     QtGui.QTreeWidgetItem.__init__(self)
+    self.setFont(0, font)
+    self.setFont(1, font)
+    self.setTextAlignment(1, QtCore.Qt.AlignRight)
+    self.setFont(2, font)
 
   def setFrame(self, frame):
+    lineEntry = frame.GetLineEntry()
+    line = lineEntry.GetLine()
     self.setText(0, "%d" % frame.GetFrameID())
     self.setText(1, "0x%x" % frame.GetPC())
-    self.setText(2, frame.GetFunctionName())
+    self.setText(2, "%s:%d" % (frame.GetFunctionName(), line))
 
 class StackView(QtGui.QTreeWidget):
   def __init__(self, parent=None):
     QtGui.QTreeWidget.__init__(self, parent)
+    self.setIndentation(0)
     self.setHeaderLabels([
       "#",
       "PC",
@@ -47,6 +54,10 @@ class StackView(QtGui.QTreeWidget):
         stackViewItem = StackViewItem()
         self.addTopLevelItem(stackViewItem)
       stackViewItem.setFrame(frame)
+    if self.topLevelItemCount() > 0:
+      self.setCurrentItem(self.topLevelItem(0))
+    self.resizeColumnToContents(0)
+    self.resizeColumnToContents(1)
 stackView = StackView()
 
 stackView_dockWidget = QtGui.QDockWidget()
