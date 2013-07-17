@@ -101,6 +101,14 @@ class CodeEditor(QtGui.QPlainTextEdit):
       bottom = top + int(self.blockBoundingRect(block).height())
       blockNumber = blockNumber + 1
 
+  def moveToLine(self, lineNumber):
+    document = self.document()
+    block = document.findBlockByLineNumber(lineNumber-1)
+    textCursor = self.textCursor()
+    textCursor.setPosition(block.position())
+    self.setFocus()
+    self.setTextCursor(textCursor)
+
 codeDisplay = CodeEditor()
 codeDisplay.setReadOnly(True)
 
@@ -156,8 +164,10 @@ else:
                   contents = files[filename]
                 codeDisplay.setDocumentTitle(filename)
                 codeDisplay.setPlainText(contents)
-                # lineEntry = frame.GetLineEntry()
-                # print dir(lineEntry)
+                lineEntry = frame.GetLineEntry()
+                line = lineEntry.GetLine()
+                print "line = %d" % line
+                codeDisplay.moveToLine(line)
                 # index = compileUnit.FindLineEntryIndex()
                 # print index
                 print 'thread=%s frame=%s' % (thread, frame)
