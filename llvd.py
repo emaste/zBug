@@ -19,6 +19,40 @@ font.setFamily("Courier")
 boldFont = QtGui.QFont(font)
 boldFont.setBold(True)
 
+class StackViewItem(QtGui.QTreeWidgetItem):
+  def __init__(self):
+    QtGui.QTreeWidgetItem.__init__(self)
+
+  def setFrame(self, frame):
+    self.setText(0, "%d" % frame.GetFrameID())
+    self.setText(1, "0x%x" % frame.GetPC())
+    self.setText(2, frame.GetFunctionName())
+
+class StackView(QtGui.QTreeWidget):
+  def __init__(self, parent=None):
+    QtGui.QTreeWidget.__init__(self, parent)
+    self.setHeaderLabels([
+      "#",
+      "PC",
+      "Function"
+    ])
+
+  def setThread(self, thread):
+    for frame in thread:
+      frameID = frame.GetFrameID()
+      print "frameID=%d topLevelItemCount=%d" % (frameID, self.topLevelItemCount())
+      if frameID < self.topLevelItemCount():
+        stackViewItem = self.topLevelItem(frameID)
+      else:
+        stackViewItem = StackViewItem()
+        self.addTopLevelItem(stackViewItem)
+      stackViewItem.setFrame(frame)
+stackView = StackView()
+
+stackView_dockWidget = QtGui.QDockWidget()
+stackView_dockWidget.setTitleBarWidget(QtGui.QLabel("Stack"))
+stackView_dockWidget.setWidget(stackView)
+
 class LineNumberArea(QtGui.QWidget):
   def __init__(self, codeEditor):
     QtGui.QWidget.__init__(self, codeEditor)
@@ -158,6 +192,7 @@ centralWidget = QtGui.QWidget()
 centralWidget.setLayout(centralLayout)
 
 mainWindow = QtGui.QMainWindow()
+mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackView_dockWidget)
 mainWindow.setCentralWidget(centralWidget)
 mainWindow.show()
 
@@ -213,8 +248,8 @@ def handleDebuggerEvents():
                 codeDisplay.setPlainText(contents)
                 lineEntry = frame.GetLineEntry()
                 line = lineEntry.GetLine()
-                print "line = %d" % line
                 codeDisplay.moveToLine(line)
+                stackView.setThread(thread)
                 # index = compileUnit.FindLineEntryIndex()
                 # print index
                 print 'thread=%s frame=%s' % (thread, frame)
