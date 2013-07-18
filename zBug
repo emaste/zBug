@@ -321,11 +321,13 @@ class StackWidget(QtGui.QTreeWidget):
     self.currentItemChanged.connect(currentItemChanged)
 
   def updateFrame(self):
-    frame = self.currentItem().frame()
-    self.__codeWidget.setFrame(frame)
-    self.__disassemblyWidget.setFrame(frame)
-    self.__localsWidget.setFrame(frame)
-    self.__registersWidget.setFrame(frame)
+    currentItem = self.currentItem()
+    if currentItem:
+      frame = currentItem.frame()
+      self.__codeWidget.setFrame(frame)
+      self.__disassemblyWidget.setFrame(frame)
+      self.__localsWidget.setFrame(frame)
+      self.__registersWidget.setFrame(frame)
 
   def setThread(self, thread):
     count = thread.GetNumFrames()
@@ -433,17 +435,29 @@ mainWindow.show()
 
 command_interpreter = debugger.GetCommandInterpreter()
 
-print "Setting a breakpoint at '%s'" % "main"
-main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
+# print "Setting a breakpoint at '%s'" % "main"
+# main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
 
-print "Lauing process with arguments " + str(arguments)
-process = target.LaunchSimple (arguments, None, os.getcwd())
+listener = debugger.GetListener()
+
+launchError = lldb.SBError()
+process = target.Launch(
+  listener,
+  arguments,
+  None,   # envp
+  os.getcwd(),
+  None,   # stdin_path
+  None,   # stdout_path
+  None,   # stderr_path
+  True,   # stop_at_endtry
+  lldb.eLaunchFlagDebug,
+  launchError
+  )
 if not process or process.GetProcessID() == lldb.LLDB_INVALID_PROCESS_ID:
-  print "Launch failed!"
+  print "Launch failed: " + str(launchError)
   sys.exit(1)
 
 pid = process.GetProcessID()
-listener = debugger.GetListener()
 
 def handleDebuggerEvents():
   done = False
@@ -458,9 +472,11 @@ def handleDebuggerEvents():
         else:
             print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
             if state == lldb.eStateStopped:
-              print "process %u stopped" % (pid)
-              for thread in process:
-                stackWidget.setThread(thread)
+              print "stopped"
+              selectedThread = process.GetSelectedThread()
+              if not selectedThread.IsValid():
+                selectedThread = process.GetThreadAtIndex(0)
+              stackWidget.setThread(selectedThread)
             elif state == lldb.eStateExited:
                 exit_desc = process.GetExitDescription()
                 if exit_desc:
@@ -479,16 +495,16 @@ def handleDebuggerEvents():
                 done = True
             elif state == lldb.eStateRunning:
               # process is running, don't say anything, we will always get one of these after resuming
-              print "process %u resumed" % (pid)
+              pass
             elif state == lldb.eStateUnloaded:
-                print "process %u unloaded, this shouldn't happen" % (pid)
-                done = True
+              print "process %u unloaded, this shouldn't happen" % (pid)
+              done = True
             elif state == lldb.eStateConnected:
-                print "process connected"
+              print "process connected"
             elif state == lldb.eStateAttaching:
-                print "process attaching"
+              print "process attaching"
             elif state == lldb.eStateLaunching:
-                print "process launching"
+              print "process launching"
       else:
           print 'Non-process event = %s' % (event)
   process_stdout = process.GetSTDOUT(1024)
