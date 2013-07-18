@@ -753,13 +753,16 @@ outputWidget_dockWidget.setWindowTitle("Output")
 outputWidget_dockWidget.setWidget(outputWidget)
 
 class MainWindow(QtGui.QMainWindow):
-  def __init__(self):
+  def __init__(self, executable):
     QtGui.QMainWindow.__init__(self)
 
     settings.beginGroup("MainWindow")
     self.resize(settings.value("size", QtCore.QSize(800, 600)))
     self.move(settings.value("pos", QtCore.QPoint(200, 200)))
     settings.endGroup()
+
+    title = "%s: %s" % (app.applicationName(), executable)
+    self.setWindowTitle(title)
 
   def closeEvent(self, event):
     settings.beginGroup("MainWindow")
