@@ -16,6 +16,8 @@ debugger.SetAsync(True)
 target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT)
 
 app = QtGui.QApplication(sys.argv)
+app.setOrganizationName("zBug")
+app.setApplicationName("zBug")
 
 font = QtGui.QFont()
 font.setPointSize(12)
@@ -404,7 +406,24 @@ registersWidget_dockWidget = QtGui.QDockWidget()
 registersWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Registers"))
 registersWidget_dockWidget.setWidget(registersWidget)
 
-mainWindow = QtGui.QMainWindow()
+settings = QtCore.QSettings()
+
+class MainWindow(QtGui.QMainWindow):
+  def __init__(self):
+    QtGui.QMainWindow.__init__(self)
+
+    settings.beginGroup("MainWindow")
+    self.resize(settings.value("size", QtCore.QSize(800, 600)))
+    self.move(settings.value("pos", QtCore.QPoint(200, 200)))
+    settings.endGroup()
+
+  def closeEvent(self, event):
+    settings.beginGroup("MainWindow")
+    settings.setValue("size", self.size())
+    settings.setValue("pos", self.pos())
+    settings.endGroup()
+
+mainWindow = MainWindow()
 mainWindow.setCentralWidget(centralWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
@@ -503,5 +522,8 @@ timer.setInterval(100)
 timer.timeout.connect(handleDebuggerEvents)
 timer.start()
 
-sys.exit(app.exec_())
+exitCode = app.exec_()
+
+sys.exit(exitCode)
+
 
