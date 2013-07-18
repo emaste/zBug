@@ -189,6 +189,7 @@ codeWidget.setReadOnly(True)
 class DisassemblyWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
+    self.__functionOrSymbol = None
 
     self.setFont(font)
     self.setReadOnly(True)
@@ -216,9 +217,16 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
   def setFrame(self, frame):
     self.__frame = frame
     pc = frame.GetPC()
-    function = frame.GetFunction()
-    instructions = function.GetInstructions(target)
-    self.clear()
+
+    functionOrSymbol = frame.GetFunction()
+    if not functionOrSymbol:
+      functionOrSymbol = frame.GetSymbol()
+    newFunctionOrSymbol = functionOrSymbol != self.__functionOrSymbol
+    self.__functionOrSymbol = functionOrSymbol
+
+    instructions = functionOrSymbol.GetInstructions(target)
+    if newFunctionOrSymbol:
+      self.clear()
     count = instructions.GetSize()
     lineNumberToHighlight = None
     for i in range(0, count):
@@ -227,7 +235,8 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
       loadAddress = address.GetLoadAddress(target)
       if loadAddress == pc:
         lineNumberToHighlight = i
-      self.insertPlainText(str(instruction) + "\n")
+      if newFunctionOrSymbol:
+        self.insertPlainText(str(instruction) + "\n")
     if lineNumberToHighlight != None:
       self.highlightLine(lineNumberToHighlight)
 
