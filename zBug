@@ -350,7 +350,9 @@ class LocalsWidget(QtGui.QTreeWidget):
     return self.__frame
 
   def setFrame(self, frame):
+    print "setFrame"
     self.__frame = frame
+
     includeArguments = True
     includeLocals = True
     includeStatics = True
@@ -567,6 +569,15 @@ class LLDBDisplay(QtGui.QTextEdit):
 
 lldbDisplay = LLDBDisplay()
 
+def updateDisplay(target):
+  process = target.GetProcess()
+  if process and process.IsValid():
+    selectedThread = process.GetSelectedThread()
+    if selectedThread and selectedThread.IsValid():
+      stackWidget.setThread(selectedThread)
+    else:
+      stackWidget.setThread(None)
+
 class LLDBCommandWidget(QtGui.QLineEdit):
   def __init__(self, commandInterpreter, lldbDisplay):
     QtGui.QLineEdit.__init__(self)
@@ -592,6 +603,7 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     else:
       self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
     self.__lastCommand = command
+    updateDisplay(target)
 
 lldbCommandWidget = LLDBCommandWidget(
   debugger.GetCommandInterpreter(),
@@ -693,7 +705,9 @@ mainWindow.show()
 
 def handleDebuggerEvents():
   event = lldb.SBEvent()
+  eventCount = 0
   while debugger.GetListener().GetNextEvent(event):
+    eventCount += 1
     if event.GetBroadcaster().GetName() == "lldb.process":
       process = target.GetProcess()
 
@@ -718,8 +732,7 @@ def handleDebuggerEvents():
       else:
         print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
         if state == lldb.eStateStopped:
-          selectedThread = None
-          desc = None
+          didSelectThread = False
           for thread in process:
             frame = thread.GetFrameAtIndex(0)
             shouldSelectThread = False
@@ -729,6 +742,7 @@ def handleDebuggerEvents():
             # if self.verbose:
             #   desc = "tid = %#x pc = %#x " % (thread.GetThreadID(),frame.GetPC()),
             if stopReason == lldb.eStopReasonNone:
+              shouldSelectThread = True
               shouldDisplay = True
             elif stopReason == lldb.eStopReasonTrace:
               shouldSelectThread = True
@@ -757,13 +771,8 @@ def handleDebuggerEvents():
             if shouldDisplay:
               lldbDisplay.appendDebuggerOutput("STOP %s\n" % thread.GetStopDescription(256))
 
-            if shouldSelectThread and not selectedThread:
-              selectedThread = thread
-              if not process.SetSelectedThread(thread):
-                selectedThread = None
-          # if selectedThread:
-          #   lldbDisplay.appendDebuggerOutput(selectedThread.GetStopDescription(256))
-          stackWidget.setThread(selectedThread)
+            if shouldSelectThread and not didSelectThread:
+              didSelectThread = process.SetSelectedThread(thread)
         elif state == lldb.eStateExited:
           exit_desc = process.GetExitDescription()
           if exit_desc:
@@ -795,6 +804,8 @@ def handleDebuggerEvents():
           action.setEnabled(False)
     else:
       print 'Non-process event = %s' % (event)
+  if eventCount > 0:
+    updateDisplay(target)
 
 timer = QtCore.QTimer()
 timer.timeout.connect(handleDebuggerEvents)
