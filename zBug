@@ -691,155 +691,123 @@ mainWindow.show()
 # print "Setting a breakpoint at '%s'" % "main"
 # main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
 
-class ZBugProcess:
-  def __init__(self, debugger, args, cwd, lldbDisplay, stackWidget, actions):
-    self.__debugger = debugger
-    self.__args = args
-    self.__cwd = cwd
-    self.__lldbDisplay = lldbDisplay
-    self.__stackWidget = stackWidget
-    self.__actions = actions
-    self.__process = None
+def handleDebuggerEvents():
+  event = lldb.SBEvent()
+  while debugger.GetListener().GetNextEvent(event):
+    if event.GetBroadcaster().GetName() == "lldb.process":
+      process = target.GetProcess()
 
-    envVars = []
-    for key, value in os.environ.iteritems():
-      envVars.append("%s=%s" % (key, value))
-    launchInfo = lldb.SBLaunchInfo(arguments)
-    launchInfo.SetArguments
-    launchInfo.SetWorkingDirectory(os.getcwd())
-    launchInfo.SetLaunchFlags(lldb.eLaunchFlagStopAtEntry)
-    launchInfo.SetEnvironmentEntries(envVars, True)
-
-    launchError = lldb.SBError()
-    process = target.Launch(launchInfo, launchError)
-    if not process or process.GetProcessID() == lldb.LLDB_INVALID_PROCESS_ID:
-      raise Exception("Launch failed: " + str(launchError))
-
-  def handleDebuggerEvents(self):
-    event = lldb.SBEvent()
-    while debugger.GetListener().GetNextEvent(event):
-      done = False
-      if event.GetBroadcaster().GetName() == "lldb.process":
-        if not self.__process:
-          self.__process = target.GetProcess()
-        state = lldb.SBProcess.GetStateFromEvent(event)
-        if state == lldb.eStateInvalid:
-          # Not a state event
-          print 'process event = %s' % (event)
-        else:
-          print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
-          if state == lldb.eStateStopped:
-            selectedThread = None
-            desc = None
-            for thread in self.__process:
-              frame = thread.GetFrameAtIndex(0)
-              shouldSelectThread = False
-              shouldDisplay = False
-              
-              stopReason = thread.GetStopReason()
-              # if self.verbose:
-              #   desc = "tid = %#x pc = %#x " % (thread.GetThreadID(),frame.GetPC()),
-              if stopReason == lldb.eStopReasonNone:
-                shouldDisplay = True
-              elif stopReason == lldb.eStopReasonTrace:
-                shouldSelectThread = True
-                shouldDisplay = True
-              elif stopReason == lldb.eStopReasonPlanComplete:
-                shouldSelectThread = True
-              # elif stopReason == lldb.eStopReasonThreadExiting:
-              #   self.__lldbDisplay.appendDebuggerOutput("Stop: thread exiting\n")
-              elif stopReason == lldb.eStopReasonExec:
-                shouldDisplay = True
-              elif stopReason == lldb.eStopReasonInvalid:
-                pass
-              elif stopReason == lldb.eStopReasonException:
-                shouldSelectThread = True
-                shouldDisplay = True
-              elif stopReason == lldb.eStopReasonBreakpoint:
-                shouldSelectThread = True
-                shouldDisplay = True
-              elif stopReason == lldb.eStopReasonWatchpoint:
-                shouldSelectThread = True
-                shouldDisplay = True
-              elif stopReason == lldb.eStopReasonSignal:
-                shouldSelectThread = True
-                shouldDisplay = True
-              
-              if shouldDisplay:
-                self.__lldbDisplay.appendDebuggerOutput("STOP %s\n" % thread.GetStopDescription(256))
-
-              if shouldSelectThread and not selectedThread:
-                selectedThread = thread
-                if not self.__process.SetSelectedThread(thread):
-                  selectedThread = None
-            # if selectedThread:
-            #   self.__lldbDisplay.appendDebuggerOutput(selectedThread.GetStopDescription(256))
-            self.__stackWidget.setThread(selectedThread)
-          elif state == lldb.eStateExited:
-            exit_desc = self.__process.GetExitDescription()
-            if exit_desc:
-              self.__lldbDisplay.appendDebuggerOutput("Process %u exited with status %u: %s\n" % (self.__process.GetProcessID(), self.__process.GetExitStatus(), exit_desc))
-            else:
-              self.__lldbDisplay.appendDebuggerOutput("Process %u exited with status %u\n" % (self.__process.GetProcessID(), self.__process.GetExitStatus()))
-            self.__stackWidget.setThread(None)
-            done = True
-          elif state == lldb.eStateCrashed:
-            self.__lldbDisplay.appendDebuggerOutput("Process %u crashed" % self.__process.GetProcessID())
-            done = True
-          elif state == lldb.eStateDetached:
-            self.__lldbDisplay.appendDebuggerOutput("Process %u detached" % self.__process.GetProcessID())
-            done = True
-          elif state == lldb.eStateRunning:
-            # process is running, don't say anything, we will always get one of these after resuming
-            pass
-          elif state == lldb.eStateUnloaded:
-            self.__lldbDisplay.appendDebuggerOutput("Process %u unloaded, this shouldn't happen!!!" % self.__process.GetProcessID())
-            done = True
-          elif state == lldb.eStateConnected:
-            pass
-          elif state == lldb.eStateAttaching:
-            pass
-          elif state == lldb.eStateLaunching:
-            pass
-      else:
-        print 'Non-process event = %s' % (event)
-      process_stdout = self.__process.GetSTDOUT(1024)
-      if process_stdout:
-        outputWidget.appendStdout(process_stdout)
-        while process_stdout:
-          process_stdout = self.__process.GetSTDOUT(1024)
+      if process.IsValid():
+        process_stdout = process.GetSTDOUT(1024)
+        if process_stdout:
           outputWidget.appendStdout(process_stdout)
-      process_stderr = self.__process.GetSTDERR(1024)
-      if process_stderr:
-        outputWidget.appendStderr(process_stderr)
-        while process_stderr:
-          process_stderr = self.__process.GetSTDERR(1024)
+          while process_stdout:
+            process_stdout = process.GetSTDOUT(1024)
+            outputWidget.appendStdout(process_stdout)
+        process_stderr = process.GetSTDERR(1024)
+        if process_stderr:
           outputWidget.appendStderr(process_stderr)
-      if done:
-        self.__process = None
-    if self.__process != None and self.__process.GetState() == lldb.eStateStopped:
-      for action in self.__actions:
-        action.setEnabled(True)
-    else:
-      for action in self.__actions:
-        action.setEnabled(False)
+          while process_stderr:
+            process_stderr = process.GetSTDERR(1024)
+            outputWidget.appendStderr(process_stderr)
 
-zBugProcess = ZBugProcess(
-  debugger,
-  arguments,
-  os.getcwd(),
-  lldbDisplay,
-  stackWidget,
-  actions
-  )
+      state = lldb.SBProcess.GetStateFromEvent(event)
+      if state == lldb.eStateInvalid:
+        # Not a state event
+        print 'process event = %s' % (event)
+      else:
+        print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
+        if state == lldb.eStateStopped:
+          selectedThread = None
+          desc = None
+          for thread in process:
+            frame = thread.GetFrameAtIndex(0)
+            shouldSelectThread = False
+            shouldDisplay = False
+            
+            stopReason = thread.GetStopReason()
+            # if self.verbose:
+            #   desc = "tid = %#x pc = %#x " % (thread.GetThreadID(),frame.GetPC()),
+            if stopReason == lldb.eStopReasonNone:
+              shouldDisplay = True
+            elif stopReason == lldb.eStopReasonTrace:
+              shouldSelectThread = True
+              shouldDisplay = True
+            elif stopReason == lldb.eStopReasonPlanComplete:
+              shouldSelectThread = True
+            # elif stopReason == lldb.eStopReasonThreadExiting:
+            #   lldbDisplay.appendDebuggerOutput("Stop: thread exiting\n")
+            elif stopReason == lldb.eStopReasonExec:
+              shouldDisplay = True
+            elif stopReason == lldb.eStopReasonInvalid:
+              pass
+            elif stopReason == lldb.eStopReasonException:
+              shouldSelectThread = True
+              shouldDisplay = True
+            elif stopReason == lldb.eStopReasonBreakpoint:
+              shouldSelectThread = True
+              shouldDisplay = True
+            elif stopReason == lldb.eStopReasonWatchpoint:
+              shouldSelectThread = True
+              shouldDisplay = True
+            elif stopReason == lldb.eStopReasonSignal:
+              shouldSelectThread = True
+              shouldDisplay = True
+            
+            if shouldDisplay:
+              lldbDisplay.appendDebuggerOutput("STOP %s\n" % thread.GetStopDescription(256))
+
+            if shouldSelectThread and not selectedThread:
+              selectedThread = thread
+              if not process.SetSelectedThread(thread):
+                selectedThread = None
+          # if selectedThread:
+          #   lldbDisplay.appendDebuggerOutput(selectedThread.GetStopDescription(256))
+          stackWidget.setThread(selectedThread)
+        elif state == lldb.eStateExited:
+          exit_desc = process.GetExitDescription()
+          if exit_desc:
+            lldbDisplay.appendDebuggerOutput("Process %u exited with status %u: %s\n" % (process.GetProcessID(), process.GetExitStatus(), exit_desc))
+          else:
+            lldbDisplay.appendDebuggerOutput("Process %u exited with status %u\n" % (process.GetProcessID(), process.GetExitStatus()))
+          stackWidget.setThread(None)
+        elif state == lldb.eStateCrashed:
+          lldbDisplay.appendDebuggerOutput("Process %u crashed" % process.GetProcessID())
+        elif state == lldb.eStateDetached:
+          lldbDisplay.appendDebuggerOutput("Process %u detached" % process.GetProcessID())
+        elif state == lldb.eStateRunning:
+          # process is running, don't say anything, we will always get one of these after resuming
+          pass
+        elif state == lldb.eStateUnloaded:
+          lldbDisplay.appendDebuggerOutput("Process %u unloaded, this shouldn't happen!!!" % process.GetProcessID())
+        elif state == lldb.eStateConnected:
+          pass
+        elif state == lldb.eStateAttaching:
+          pass
+        elif state == lldb.eStateLaunching:
+          pass
+
+      if process.GetState() == lldb.eStateStopped:
+        for action in actions:
+          action.setEnabled(True)
+      else:
+        for action in actions:
+          action.setEnabled(False)
+    else:
+      print 'Non-process event = %s' % (event)
 
 timer = QtCore.QTimer()
-timer.timeout.connect(zBugProcess.handleDebuggerEvents)
+timer.timeout.connect(handleDebuggerEvents)
 timer.start(100)
 
-lldbDisplay.appendDebuggerOutput("Welcome to zBug version " + version + "\n")
-lldbDisplay.appendDebuggerOutput("Process has been launched and stopped.\n")
-
+lldbDisplay.appendDebuggerOutput("Welcome to zBug version " + version + "!\n")
+if len(arguments) > 0:
+  lldbCommandWidget.executeCommand(
+    "settings set target.run-args -- %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
+    )
+lldbCommandWidget.executeCommand(
+  "process launch --stop-at-entry \"%s\"" % executable
+  )
 lldbCommandWidget.setFocus()
 
 sys.exit(app.exec_())
