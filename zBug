@@ -1,7 +1,5 @@
 #!/usr/bin/python
 
-version = "0.1.0"
-
 import sys, os, platform, commands
 from PySide import QtCore, QtGui
 
@@ -53,6 +51,7 @@ target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT
 app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
+app.setApplicationVersion("0.1.0")
 
 settings = QtCore.QSettings()
 
@@ -913,7 +912,7 @@ timer = QtCore.QTimer()
 timer.timeout.connect(handleDebuggerEvents)
 timer.start(100)
 
-lldbDisplay.appendDebuggerOutput("Welcome to zBug version " + version + "!\n")
+lldbDisplay.appendDebuggerOutput("Welcome to zBug version %s!\n" % app.applicationVersion())
 if len(arguments) > 0:
   lldbCommandWidget.executeCommand(
     "settings set target.run-args -- %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
