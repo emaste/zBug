@@ -1,9 +1,8 @@
 #!/usr/bin/python
-# export PYTHONPATH=/Developer/Library/PrivateFrameworks/LLDB.framework/Resources/Python
 
 version = "0.1.0"
 
-import lldb, sys, os
+import sys, os, platform, commands
 from PySide import QtCore, QtGui
 
 if len(sys.argv) <= 1:
@@ -11,6 +10,40 @@ if len(sys.argv) <= 1:
   sys.exit(1)
 executable = sys.argv[1]
 arguments = sys.argv[2:]
+
+#----------------------------------------------------------------------
+# Code that auto imports LLDB (from LLDB source code)
+#----------------------------------------------------------------------
+try: 
+    # Just try for LLDB in case PYTHONPATH is already correctly setup
+    import lldb
+except ImportError:
+    lldb_python_dirs = list()
+    # lldb is not in the PYTHONPATH, try some defaults for the current platform
+    platform_system = platform.system()
+    if platform_system == 'Darwin':
+        # On Darwin, try the currently selected Xcode directory
+        xcode_dir = commands.getoutput("xcode-select --print-path")
+        if xcode_dir:
+            lldb_python_dirs.append(os.path.realpath(xcode_dir + '/../SharedFrameworks/LLDB.framework/Resources/Python'))
+            lldb_python_dirs.append(xcode_dir + '/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
+        lldb_python_dirs.append('/System/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
+    success = False
+    for lldb_python_dir in lldb_python_dirs:
+        if os.path.exists(lldb_python_dir):
+            if not (sys.path.__contains__(lldb_python_dir)):
+                sys.path.append(lldb_python_dir)
+                try: 
+                    import lldb
+                except ImportError:
+                    pass
+                else:
+                    print 'imported lldb from: "%s"' % (lldb_python_dir)
+                    success = True
+                    break
+    if not success:
+        print "error: couldn't locate the 'lldb' module, please set PYTHONPATH correctly"
+        sys.exit(1)
 
 debugger = lldb.SBDebugger.Create()
 debugger.SetAsync(True)
@@ -508,19 +541,13 @@ class ZBugProcess:
     self.__stackWidget = stackWidget
     self.__process = None
 
+    launchInfo = lldb.SBLaunchInfo(arguments)
+    launchInfo.SetArguments
+    launchInfo.SetWorkingDirectory(os.getcwd())
+    launchInfo.SetLaunchFlags(lldb.eLaunchFlagStopAtEntry)
+
     launchError = lldb.SBError()
-    process = target.Launch(
-      debugger.GetListener(),
-      arguments,
-      None,   # envp
-      os.getcwd(),
-      None,   # stdin_path
-      None,   # stdout_path
-      None,   # stderr_path
-      True,   # stop_at_endtry
-      lldb.eLaunchFlagDebug,
-      launchError
-      )
+    process = target.Launch(launchInfo, launchError)
     if not process or process.GetProcessID() == lldb.LLDB_INVALID_PROCESS_ID:
       raise Exception("Launch failed: " + str(launchError))
 
