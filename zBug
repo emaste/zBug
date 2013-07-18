@@ -50,7 +50,7 @@ debugger.SetAsync(True)
 
 target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT)
 
-app = QtGui.QApplication(sys.argv)
+app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
 
