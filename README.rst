@@ -26,9 +26,7 @@ Installation
 
 Simply copy the single file "zBug" to somewhere on your PATH and ensure that it is executable.  You must also ensure that the PySide and LLDB Python modules are on your PYTHONPATH.
 
-- On OS X, the LLDB Python module that comes with Xcode is not on the PYTHONPATH by default.  To add it to PYTHONPATH, run (in a Terminal or shell script)::
-
-    export PYTHONPATH=/Developer/Library/PrivateFrameworks/LLDB.framework/Resources/Python
+- On OS X, the LLDB Python module that comes with Xcode is not on the PYTHONPATH by default.  However, zBug should automatically find the LLDB module anyway!
 
 Using zBug
 ----------
