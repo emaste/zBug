@@ -75,7 +75,7 @@ class CodeWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
 
-    self.__fileSpec = None
+    self.__pathname = None
 
     self.setReadOnly(True)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -159,12 +159,16 @@ class CodeWidget(QtGui.QPlainTextEdit):
     lineEntry = frame.GetLineEntry()
 
     fileSpec = lineEntry.GetFileSpec()
-    newFileSpec = fileSpec != self.__fileSpec
-    self.__fileSpec = fileSpec
-
     if fileSpec.GetFilename():
-      if newFileSpec:
-        f = open(str(fileSpec), 'r')
+      pathname = str(fileSpec)
+    else:
+      pathname = ""
+    newPathname = pathname != self.__pathname
+    self.__pathname = pathname
+
+    if len(pathname) > 0:
+      if newPathname:
+        f = open(pathname, 'r')
         contents = f.read()
         f.close()
         self.setPlainText(contents)
@@ -245,9 +249,9 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
 
     self.setFont(0, font)
     self.setFont(1, font)
-    self.setFont(2, font)
+    if includeType:
+      self.setFont(2, font)
 
-    self.__staticColor = QtGui.QColor(QtCore.Qt.white)
     self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
 
   def expanded(self):
@@ -256,7 +260,6 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
       self.update()
 
   def collapsed(self):
-    print "*****"
     if self.__expanded:
       self.__expanded = False
       self.update()
@@ -274,7 +277,7 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     if value.GetValueDidChange():
       self.setBackground(1, self.__dynamicColor)
     else:
-      self.setBackground(1, self.__staticColor)
+      self.setBackground(1, self.background(0))
 
     if includeType:
       self.setText(2, value.GetTypeName())
@@ -319,6 +322,7 @@ class LocalsWidget(QtGui.QTreeWidget):
 
     self.__existingItems = {}
 
+    self.setEnabled(False)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(12)
     self.setHeaderLabels([
@@ -346,46 +350,44 @@ class LocalsWidget(QtGui.QTreeWidget):
     settings.endGroup()
     QtGui.QTreeWidget.hideEvent(self, event)
 
-  def frame(self):
-    return self.__frame
-
   def setFrame(self, frame):
-    print "setFrame"
-    self.__frame = frame
+    enabled = False
+    if frame and frame.IsValid():
+      includeArguments = True
+      includeLocals = True
+      includeStatics = True
+      in_scope_only = True
+      variables = frame.GetVariables(
+        includeArguments,
+        includeLocals,
+        includeStatics,
+        in_scope_only
+        )
 
-    includeArguments = True
-    includeLocals = True
-    includeStatics = True
-    in_scope_only = True
-    variables = frame.GetVariables(
-      includeArguments,
-      includeLocals,
-      includeStatics,
-      in_scope_only
-      )
+      for i in range(0, self.topLevelItemCount()):
+        self.topLevelItem(i).saveExpansionState()
 
-    for i in range(0, self.topLevelItemCount()):
-      self.topLevelItem(i).saveExpansionState()
+      while self.topLevelItemCount() > 0:
+        self.takeTopLevelItem(0)
 
-    while self.topLevelItemCount() > 0:
-      self.takeTopLevelItem(0)
+      count = variables.GetSize()
+      for i in range(0, count):
+        value = variables.GetValueAtIndex(i)
+        valueName = value.GetName()
+        if valueName in self.__existingItems:
+          valueWidgetItem = self.__existingItems[valueName]
+        else:
+          valueWidgetItem = ValueWidgetItem(value, includeType=True)
+          self.__existingItems[valueName] = valueWidgetItem
 
-    count = variables.GetSize()
-    for i in range(0, count):
-      value = variables.GetValueAtIndex(i)
-      valueName = value.GetName()
-      if valueName in self.__existingItems:
-        valueWidgetItem = self.__existingItems[valueName]
-      else:
-        valueWidgetItem = ValueWidgetItem(value, includeType=True)
-        self.__existingItems[valueName] = valueWidgetItem
+        self.addTopLevelItem(valueWidgetItem)
+        valueWidgetItem.update()
 
-      self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.update()
+      for i in range(0, self.topLevelItemCount()):
+        self.topLevelItem(i).restoreExpansionState()
 
-    for i in range(0, self.topLevelItemCount()):
-      self.topLevelItem(i).restoreExpansionState()
-
+      enabled = True
+    self.setEnabled(enabled)
 
 localsWidget = LocalsWidget()
 
@@ -393,6 +395,9 @@ class RegistersWidget(QtGui.QTreeWidget):
   def __init__(self):
     QtGui.QTreeWidget.__init__(self)
 
+    self.__existingItems = {}
+
+    self.setEnabled(False)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(12)
     self.setHeaderLabels([
@@ -417,40 +422,57 @@ class RegistersWidget(QtGui.QTreeWidget):
     settings.endGroup()
     QtGui.QTreeWidget.hideEvent(self, event)
 
-  def frame(self):
-    return self.__frame
-
   def setFrame(self, frame):
-    self.__frame = frame
-    registers = frame.GetRegisters()
-    self.clear()
-    count = registers.GetSize()
-    for i in range(0, count):
-      value = registers.GetValueAtIndex(i)
-      valueWidgetItem = ValueWidgetItem(value, includeType=False)
-      self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setFirstColumnSpanned(True)
+    enabled = False
+    if frame and frame.IsValid():
+      registers = frame.GetRegisters()
+ 
+      for i in range(0, self.topLevelItemCount()):
+        self.topLevelItem(i).saveExpansionState()
+
+      while self.topLevelItemCount() > 0:
+        self.takeTopLevelItem(0)
+
+      count = registers.GetSize()
+      for i in range(0, count):
+        value = registers.GetValueAtIndex(i)
+        valueName = value.GetName()
+        if valueName in self.__existingItems:
+          valueWidgetItem = self.__existingItems[valueName]
+        else:
+          valueWidgetItem = ValueWidgetItem(value, includeType=False)
+          self.__existingItems[valueName] = valueWidgetItem
+
+        self.addTopLevelItem(valueWidgetItem)
+        valueWidgetItem.update()
+
+      for i in range(0, self.topLevelItemCount()):
+        self.topLevelItem(i).restoreExpansionState()
+
+      enabled = True
+    self.setEnabled(enabled)
 
 registersWidget = RegistersWidget()
 
 class StackWidgetItem(QtGui.QTreeWidgetItem):
-  def __init__(self):
+  def __init__(self, frame):
     QtGui.QTreeWidgetItem.__init__(self)
+
+    self.__frame = frame
+
     self.setFont(0, font)
     self.setFont(1, font)
     self.setTextAlignment(1, QtCore.Qt.AlignRight)
     self.setFont(2, font)
 
-  def frame(self):
-    return self.__frame
-
-  def setFrame(self, frame):
-    self.__frame = frame
     lineEntry = frame.GetLineEntry()
     line = lineEntry.GetLine()
     self.setText(0, "%d" % frame.GetFrameID())
-    self.setText(1, "0x%x" % frame.GetPC())
+    self.setText(1, "%#x" % frame.GetPC())
     self.setText(2, "%s:%d" % (frame.GetFunctionName(), line))
+
+  def frame(self):
+    return self.__frame
 
 class StackWidget(QtGui.QTreeWidget):
   def __init__(
@@ -467,48 +489,50 @@ class StackWidget(QtGui.QTreeWidget):
     self.__localsWidget = localsWidget
     self.__registersWidget = registersWidget
 
+    self.setEnabled(False)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(0)
     self.setHeaderLabels([
       "#",
       "PC",
-      "Function"
+      "Location"
     ])
 
     def currentItemChanged(newItem, oldItem):
-      self.updateFrame()
+      self.updateInferiors()
     self.currentItemChanged.connect(currentItemChanged)
 
-  def updateFrame(self):
+  def updateInferiors(self):
     currentItem = self.currentItem()
     if currentItem:
       frame = currentItem.frame()
       self.__codeWidget.setFrame(frame)
       self.__disassemblyWidget.setFrame(frame)
-      self.__localsWidget.setFrame(frame)
-      self.__registersWidget.setFrame(frame)
+    else:
+      frame = None
+    self.__localsWidget.setFrame(frame)
+    self.__registersWidget.setFrame(frame)
 
   def setThread(self, thread):
-    if thread:
+    self.setCurrentItem(None)
+    enabled = False
+    if thread and thread.IsValid():
       count = thread.GetNumFrames()
-    else:
-      count = 0
-    for i in range(0, count):
-      frame = thread.GetFrameAtIndex(i)
-      if i < self.topLevelItemCount():
-        stackWidgetItem = self.topLevelItem(i)
-      else:
-        stackWidgetItem = StackWidgetItem()
-        self.addTopLevelItem(stackWidgetItem)
-      stackWidgetItem.setFrame(frame)
-    while self.topLevelItemCount() > count:
-      self.takeTopLevelItem(count)
+      if count > 0:
+        self.clear()
+        for i in range(0, count):
+          frame = thread.GetFrameAtIndex(i)
+          stackWidgetItem = StackWidgetItem(frame)
+          self.addTopLevelItem(stackWidgetItem)
 
-    if self.topLevelItemCount() > 0:
-      self.setCurrentItem(self.topLevelItem(0))
-    self.resizeColumnToContents(0)
-    self.resizeColumnToContents(1)
-    self.updateFrame()
+        self.resizeColumnToContents(0)
+        self.resizeColumnToContents(1)
+
+        self.setCurrentItem(self.topLevelItem(0))
+
+        enabled = True
+    self.setEnabled(enabled)
+    self.updateInferiors()
 
 stackWidget = StackWidget(
   codeWidget,
@@ -516,6 +540,83 @@ stackWidget = StackWidget(
   localsWidget,
   registersWidget
   )
+
+class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
+  def __init__(self, thread):
+    QtGui.QTreeWidgetItem.__init__(self)
+
+    self.__thread = thread
+
+    self.setFont(0, font)
+    self.setFont(1, font)
+    self.setFont(2, font)
+    self.setFont(3, font)
+
+    process = thread.GetProcess()
+    frame = thread.GetFrameAtIndex(0)
+    lineEntry = frame.GetLineEntry()
+    line = lineEntry.GetLine()
+
+    self.setText(0, "%u" % thread.GetIndexID())
+    self.setText(1, "%#x" % thread.GetThreadID())
+    self.setText(2, thread.GetName())
+    locationDesc = "%s:%d" % (frame.GetFunctionName(), line)
+    self.setText(3, locationDesc)
+
+  def thread(self):
+    return self.__thread
+
+class ThreadsWidget(QtGui.QTreeWidget):
+  def __init__(
+    self,
+    stackWidget
+    ):
+    QtGui.QTreeWidget.__init__(self)
+
+    self.__stackWidget = stackWidget
+
+    self.setEnabled(False)
+    self.setFocusPolicy(QtCore.Qt.NoFocus)
+    self.setIndentation(0)
+    self.setHeaderLabels([
+      "#",
+      "TID",
+      "Name",
+      "Location"
+    ])
+
+    def currentItemChanged(newItem, oldItem):
+      currentItem = self.currentItem()
+      if currentItem:
+        thread = currentItem.thread()
+      else:
+        thread = None
+      self.__stackWidget.setThread(thread)
+    self.currentItemChanged.connect(currentItemChanged)
+
+  def setProcess(self, process):
+    if process.GetState() != lldb.eStateRunning:
+      count = process.GetNumThreads()
+      selectedThread = process.GetSelectedThread()
+
+      self.setCurrentItem(None)
+      self.clear()
+      for i in range(0, count):
+        thread = process.GetThreadAtIndex(i)
+        threadWidgetItem = ThreadsWidgetItem(thread)
+        self.addTopLevelItem(threadWidgetItem)
+        # Why can't we just compare the threads directly??
+        if thread.GetThreadID() == selectedThread.GetThreadID():
+          self.setCurrentItem(threadWidgetItem)
+
+      self.resizeColumnToContents(0)
+      self.resizeColumnToContents(1)
+
+      self.setEnabled(True)
+    else:
+      self.setEnabled(False)
+
+threadsWidget = ThreadsWidget(stackWidget)
 
 class OutputWidget(QtGui.QTextEdit):
   def __init__(self):
@@ -572,11 +673,7 @@ lldbDisplay = LLDBDisplay()
 def updateDisplay(target):
   process = target.GetProcess()
   if process and process.IsValid():
-    selectedThread = process.GetSelectedThread()
-    if selectedThread and selectedThread.IsValid():
-      stackWidget.setThread(selectedThread)
-    else:
-      stackWidget.setThread(None)
+    threadsWidget.setProcess(process)
 
 class LLDBCommandWidget(QtGui.QLineEdit):
   def __init__(self, commandInterpreter, lldbDisplay):
@@ -625,6 +722,11 @@ stackWidget_dockWidget = QtGui.QDockWidget()
 stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
 stackWidget_dockWidget.setWindowTitle("Stack")
 stackWidget_dockWidget.setWidget(stackWidget)
+
+threadsWidget_dockWidget = QtGui.QDockWidget()
+threadsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+threadsWidget_dockWidget.setWindowTitle("Threads")
+threadsWidget_dockWidget.setWidget(threadsWidget)
 
 codeWidget_dockWidget = QtGui.QDockWidget()
 codeWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -695,6 +797,7 @@ mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, outputWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, codeWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, disassemblyWidget_dockWidget)
@@ -742,8 +845,7 @@ def handleDebuggerEvents():
             # if self.verbose:
             #   desc = "tid = %#x pc = %#x " % (thread.GetThreadID(),frame.GetPC()),
             if stopReason == lldb.eStopReasonNone:
-              shouldSelectThread = True
-              shouldDisplay = True
+              pass
             elif stopReason == lldb.eStopReasonTrace:
               shouldSelectThread = True
               shouldDisplay = True
@@ -817,7 +919,7 @@ if len(arguments) > 0:
     "settings set target.run-args -- %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
     )
 lldbCommandWidget.executeCommand(
-  "process launch --stop-at-entry \"%s\"" % executable
+  "process launch --stop-at-entry"
   )
 lldbCommandWidget.setFocus()
 
