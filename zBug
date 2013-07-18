@@ -466,8 +466,6 @@ class OutputWidget(QtGui.QTextEdit):
 
 outputWidget = OutputWidget()
 
-lineEdit = QtGui.QLineEdit()
-
 class LLDBDisplay(QtGui.QTextEdit):
   def __init__(self, parent=None):
     QtGui.QTextEdit.__init__(self, parent)
@@ -497,9 +495,37 @@ class LLDBDisplay(QtGui.QTextEdit):
 
 lldbDisplay = LLDBDisplay()
 
+class LLDBCommandWidget(QtGui.QLineEdit):
+  def __init__(self, commandInterpreter, lldbDisplay):
+    QtGui.QLineEdit.__init__(self)
+
+    self.__commandInterpreter = commandInterpreter
+    self.__lldbDisplay = lldbDisplay
+    self.__lastCommand = None
+
+    def executeCommand():
+      command = str(self.text())
+      if len(command) == 0 and self.__lastCommand != None:
+        command = self.__lastCommand
+      lldbDisplay.appendCommand(command)
+      self.clear()
+      return_obj = lldb.SBCommandReturnObject()
+      self.__commandInterpreter.HandleCommand(command, return_obj)
+      if return_obj.Succeeded():
+        self.__lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
+      else:
+        self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
+      self.__lastCommand = command
+    self.returnPressed.connect(executeCommand)
+
+lldbCommandWidget = LLDBCommandWidget(
+  debugger.GetCommandInterpreter(),
+  lldbDisplay
+  )
+
 lldbCommandLayout = QtGui.QHBoxLayout()
 lldbCommandLayout.addWidget(QtGui.QLabel("lldb:"))
-lldbCommandLayout.addWidget(lineEdit)
+lldbCommandLayout.addWidget(lldbCommandWidget)
 
 lldbLayout = QtGui.QVBoxLayout()
 lldbLayout.addWidget(lldbDisplay)
@@ -647,20 +673,6 @@ class ZBugProcess:
       if done:
         self.__process = None
 
-command_interpreter = debugger.GetCommandInterpreter()
-def executeCommand():
-  command = str(lineEdit.text())
-  lldbDisplay.appendCommand(command)
-  lineEdit.clear()
-  return_obj = lldb.SBCommandReturnObject()
-  command_interpreter.HandleCommand(command, return_obj)
-  if return_obj.Succeeded():
-    lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
-  else:
-    lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
-lineEdit.returnPressed.connect(executeCommand)
-lineEdit.setFocus()
-
 zBugProcess = ZBugProcess(
   debugger,
   arguments,
@@ -675,6 +687,8 @@ timer.start(100)
 
 lldbDisplay.appendDebuggerOutput("Welcome to zBug version " + version + "\n")
 lldbDisplay.appendDebuggerOutput("Process has been launched and stopped.\n")
+
+lldbCommandWidget.setFocus()
 
 sys.exit(app.exec_())
 
