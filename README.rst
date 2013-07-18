@@ -3,6 +3,11 @@ zBug
 
 zBug (pronounced *zee-bug*) is a front end to the LLDB debugger (see http://lldb.llvm.org).
 
+License
+-------
+
+zBug is licensed under a BSD 2-clause open-source license; see LICENSE for details.
+
 Requirements
 ------------
 
