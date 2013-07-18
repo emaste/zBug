@@ -19,65 +19,22 @@ font.setFamily("Courier")
 boldFont = QtGui.QFont(font)
 boldFont.setBold(True)
 
-class StackViewItem(QtGui.QTreeWidgetItem):
-  def __init__(self):
-    QtGui.QTreeWidgetItem.__init__(self)
-    self.setFont(0, font)
-    self.setFont(1, font)
-    self.setTextAlignment(1, QtCore.Qt.AlignRight)
-    self.setFont(2, font)
-
-  def setFrame(self, frame):
-    lineEntry = frame.GetLineEntry()
-    line = lineEntry.GetLine()
-    self.setText(0, "%d" % frame.GetFrameID())
-    self.setText(1, "0x%x" % frame.GetPC())
-    self.setText(2, "%s:%d" % (frame.GetFunctionName(), line))
-
-class StackView(QtGui.QTreeWidget):
-  def __init__(self, parent=None):
-    QtGui.QTreeWidget.__init__(self, parent)
-    self.setIndentation(0)
-    self.setHeaderLabels([
-      "#",
-      "PC",
-      "Function"
-    ])
-
-  def setThread(self, thread):
-    for frame in thread:
-      frameID = frame.GetFrameID()
-      print "frameID=%d topLevelItemCount=%d" % (frameID, self.topLevelItemCount())
-      if frameID < self.topLevelItemCount():
-        stackViewItem = self.topLevelItem(frameID)
-      else:
-        stackViewItem = StackViewItem()
-        self.addTopLevelItem(stackViewItem)
-      stackViewItem.setFrame(frame)
-    if self.topLevelItemCount() > 0:
-      self.setCurrentItem(self.topLevelItem(0))
-    self.resizeColumnToContents(0)
-    self.resizeColumnToContents(1)
-stackView = StackView()
-
-stackView_dockWidget = QtGui.QDockWidget()
-stackView_dockWidget.setTitleBarWidget(QtGui.QLabel("Stack"))
-stackView_dockWidget.setWidget(stackView)
-
 class LineNumberArea(QtGui.QWidget):
-  def __init__(self, codeEditor):
-    QtGui.QWidget.__init__(self, codeEditor)
-    self.__codeEditor = codeEditor
+  def __init__(self, codeWidget):
+    QtGui.QWidget.__init__(self, codeWidget)
+    self.__codeWidget = codeWidget
 
   def sizeHint(self):
-    return QtCore.QSize(self.__codeEditor.lineNumberAreaWidth(), 0)
+    return QtCore.QSize(self.__codeWidget.lineNumberAreaWidth(), 0)
 
   def paintEvent(self, event):
-    self.__codeEditor.lineNumberAreaPaintEvent(event)
+    self.__codeWidget.lineNumberAreaPaintEvent(event)
 
-class CodeEditor(QtGui.QPlainTextEdit):
+class CodeWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
+
+    self.__files = {}
 
     self.setFont(font)
 
@@ -162,8 +119,153 @@ class CodeEditor(QtGui.QPlainTextEdit):
     textCursor.setPosition(block.position())
     self.setTextCursor(textCursor)
 
-codeDisplay = CodeEditor()
-codeDisplay.setReadOnly(True)
+  def setFrame(self, frame):
+    compileUnit = frame.GetCompileUnit()
+    fileSpec = compileUnit.GetFileSpec()
+    filename = fileSpec.GetFilename()
+    if not filename in files:
+      f = open(filename, 'r')
+      contents = f.read()
+      f.close()
+      self.__files[filename] = contents
+    else:
+      contents = self.__files[filename]
+    codeWidget.setDocumentTitle(filename)
+    codeWidget.setPlainText(contents)
+    lineEntry = frame.GetLineEntry()
+    line = lineEntry.GetLine()
+    self.moveToLine(line)
+
+codeWidget = CodeWidget()
+codeWidget.setReadOnly(True)
+
+class LocalsWidgetItem(QtGui.QTreeWidgetItem):
+  def __init__(self):
+    QtGui.QTreeWidgetItem.__init__(self)
+
+    self.setFont(0, font)
+    self.setFont(1, font)
+    self.setFont(2, font)
+
+    self.__staticColor = QtGui.QColor(QtCore.Qt.white)
+    self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
+
+  def value(self):
+    return self.__value
+
+  def setValue(self, value):
+    self.setText(0, value.GetName())
+    self.setText(1, value.GetTypeName())
+    self.setText(2, value.GetValue())
+    if value.GetValueDidChange():
+      self.setBackground(2, self.__dynamicColor)
+    else:
+      self.setBackground(2, self.__staticColor)
+
+class LocalsWidget(QtGui.QTreeWidget):
+  def __init__(self):
+    QtGui.QTreeWidget.__init__(self)
+
+    self.setIndentation(0)
+    self.setHeaderLabels([
+      "Name",
+      "Type",
+      "Value"
+    ])
+
+  def frame(self):
+    return self.__frame
+
+  def setFrame(self, frame):
+    self.__frame = frame
+    includeArguments = True
+    includeLocals = True
+    includeStatics = True
+    in_scope_only = True
+    variables = frame.GetVariables(
+      includeArguments,
+      includeLocals,
+      includeStatics,
+      in_scope_only
+      )
+    count = variables.GetSize()
+    for i in range(0, count):
+      value = variables.GetValueAtIndex(i)
+      if i < self.topLevelItemCount():
+        localsWidgetItem = self.topLevelItem(i)
+      else:
+        localsWidgetItem = LocalsWidgetItem()
+        self.addTopLevelItem(localsWidgetItem)
+      localsWidgetItem.setValue(value)
+    while self.topLevelItemCount() > count:
+      self.takeTopLevelItem(count)
+    self.resizeColumnToContents(0)
+    self.resizeColumnToContents(1)
+
+localsWidget = LocalsWidget()
+
+class StackWidgetItem(QtGui.QTreeWidgetItem):
+  def __init__(self):
+    QtGui.QTreeWidgetItem.__init__(self)
+    self.setFont(0, font)
+    self.setFont(1, font)
+    self.setTextAlignment(1, QtCore.Qt.AlignRight)
+    self.setFont(2, font)
+
+  def frame(self):
+    return self.__frame
+
+  def setFrame(self, frame):
+    self.__frame = frame
+    lineEntry = frame.GetLineEntry()
+    line = lineEntry.GetLine()
+    self.setText(0, "%d" % frame.GetFrameID())
+    self.setText(1, "0x%x" % frame.GetPC())
+    self.setText(2, "%s:%d" % (frame.GetFunctionName(), line))
+
+class StackWidget(QtGui.QTreeWidget):
+  def __init__(self, codeWidget, localsWidget):
+    QtGui.QTreeWidget.__init__(self)
+
+    self.__codeWidget = codeWidget
+    self.__localsWidget = localsWidget
+
+    self.setIndentation(0)
+    self.setHeaderLabels([
+      "#",
+      "PC",
+      "Function"
+    ])
+
+    def currentItemChanged(newItem, oldItem):
+      self.updateFrame()
+    self.currentItemChanged.connect(currentItemChanged)
+
+  def updateFrame(self):
+    frame = self.currentItem().frame()
+    self.__codeWidget.setFrame(frame)
+    self.__localsWidget.setFrame(frame)
+
+  def setThread(self, thread):
+    count = thread.GetNumFrames()
+    for i in range(0, count):
+      frame = thread.GetFrameAtIndex(i)
+      if i < self.topLevelItemCount():
+        stackWidgetItem = self.topLevelItem(i)
+      else:
+        stackWidgetItem = StackWidgetItem()
+        self.addTopLevelItem(stackWidgetItem)
+      stackWidgetItem.setFrame(frame)
+    while self.topLevelItemCount() > count:
+      self.takeTopLevelItem(count)
+
+    if self.topLevelItemCount() > 0:
+      self.setCurrentItem(self.topLevelItem(0))
+    self.resizeColumnToContents(0)
+    self.resizeColumnToContents(1)
+    self.updateFrame()
+
+stackWidget = StackWidget(codeWidget, localsWidget)
 
 lineEdit = QtGui.QLineEdit()
 
@@ -195,16 +297,25 @@ class OutputDisplay(QtGui.QTextEdit):
 outputDisplay = OutputDisplay()
 
 centralLayout = QtGui.QVBoxLayout()
-centralLayout.addWidget(codeDisplay)
+centralLayout.addWidget(codeWidget)
 centralLayout.addWidget(outputDisplay)
 centralLayout.addWidget(lineEdit)
 
 centralWidget = QtGui.QWidget()
 centralWidget.setLayout(centralLayout)
 
+stackWidget_dockWidget = QtGui.QDockWidget()
+stackWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Stack"))
+stackWidget_dockWidget.setWidget(stackWidget)
+
+localsWidget_dockWidget = QtGui.QDockWidget()
+localsWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Locals"))
+localsWidget_dockWidget.setWidget(localsWidget)
+
 mainWindow = QtGui.QMainWindow()
-mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackView_dockWidget)
 mainWindow.setCentralWidget(centralWidget)
+mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.show()
 
 files = {}
@@ -244,26 +355,7 @@ def handleDebuggerEvents():
             if state == lldb.eStateStopped:
               print "process %u stopped" % (pid)
               for thread in process:
-                frame = thread.GetFrameAtIndex(0)
-                compileUnit = frame.GetCompileUnit()
-                fileSpec = compileUnit.GetFileSpec()
-                filename = fileSpec.GetFilename()
-                if not filename in files:
-                  f = open(filename, 'r')
-                  contents = f.read()
-                  f.close()
-                  files[filename] = contents
-                else:
-                  contents = files[filename]
-                codeDisplay.setDocumentTitle(filename)
-                codeDisplay.setPlainText(contents)
-                lineEntry = frame.GetLineEntry()
-                line = lineEntry.GetLine()
-                codeDisplay.moveToLine(line)
-                stackView.setThread(thread)
-                # index = compileUnit.FindLineEntryIndex()
-                # print index
-                print 'thread=%s frame=%s' % (thread, frame)
+                stackWidget.setThread(thread)
             elif state == lldb.eStateExited:
                 exit_desc = process.GetExitDescription()
                 if exit_desc:
@@ -318,6 +410,7 @@ def executeCommand():
   else:
     outputDisplay.appendDebuggerErrorOutput(return_obj.GetError())
 lineEdit.returnPressed.connect(executeCommand)
+lineEdit.setFocus()
 
 timer = QtCore.QTimer()
 timer.setInterval(100)
