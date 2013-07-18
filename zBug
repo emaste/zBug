@@ -247,7 +247,7 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def value(self):
     return self.__value
 
-  def setValue(self, value, includeType):
+  def setValue(self, value, includeType, visitedAddresses):
     column = 0
 
     self.setText(column, value.GetName())
@@ -265,12 +265,14 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     column += 1
 
     self.takeChildren()
-    count = value.GetNumChildren()
-    for i in range(0, count):
-      childValue = value.GetChildAtIndex(i)
-      childValueWidgetItem = ValueWidgetItem()
-      childValueWidgetItem.setValue(childValue, includeType)
-      self.addChild(childValueWidgetItem)
+    address = value.GetAddress()
+    if not address in visitedAddresses:
+      count = value.GetNumChildren()
+      for i in range(0, count):
+        childValue = value.GetChildAtIndex(i)
+        childValueWidgetItem = ValueWidgetItem()
+        childValueWidgetItem.setValue(childValue, includeType, visitedAddresses + [address])
+        self.addChild(childValueWidgetItem)
 
 class LocalsWidget(QtGui.QTreeWidget):
   def __init__(self):
@@ -310,7 +312,7 @@ class LocalsWidget(QtGui.QTreeWidget):
       else:
         valueWidgetItem = ValueWidgetItem()
         self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value, includeType=True)
+      valueWidgetItem.setValue(value, includeType=True, visitedAddresses=[])
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
     self.autosizeColumns()
@@ -355,7 +357,7 @@ class RegistersWidget(QtGui.QTreeWidget):
       else:
         valueWidgetItem = ValueWidgetItem()
         self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value, includeType=False)
+      valueWidgetItem.setValue(value, includeType=False, visitedAddresses=[])
       valueWidgetItem.setFirstColumnSpanned(True)
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
