@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # export PYTHONPATH=/Developer/Library/PrivateFrameworks/LLDB.framework/Resources/Python
 
+version = "0.1.0"
+
 import lldb, sys, os
 from PySide import QtCore, QtGui
 
@@ -410,36 +412,45 @@ class LLDBDisplay(QtGui.QTextEdit):
 
 lldbDisplay = LLDBDisplay()
 
-commandLayout = QtGui.QHBoxLayout()
-commandLayout.addWidget(QtGui.QLabel("lldb:"))
-commandLayout.addWidget(lineEdit)
+lldbCommandLayout = QtGui.QHBoxLayout()
+lldbCommandLayout.addWidget(QtGui.QLabel("lldb:"))
+lldbCommandLayout.addWidget(lineEdit)
 
-centralLayout = QtGui.QVBoxLayout()
-centralLayout.addWidget(codeWidget)
-centralLayout.addWidget(lldbDisplay)
-centralLayout.addLayout(commandLayout)
+lldbLayout = QtGui.QVBoxLayout()
+lldbLayout.addWidget(lldbDisplay)
+lldbLayout.addLayout(lldbCommandLayout)
 
-centralWidget = QtGui.QWidget()
-centralWidget.setLayout(centralLayout)
+lldbWidget = QtGui.QWidget()
+lldbWidget.setLayout(lldbLayout)
 
 stackWidget_dockWidget = QtGui.QDockWidget()
-stackWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Stack"))
+stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+stackWidget_dockWidget.setWindowTitle("Stack")
 stackWidget_dockWidget.setWidget(stackWidget)
 
+codeWidget_dockWidget = QtGui.QDockWidget()
+codeWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+codeWidget_dockWidget.setWindowTitle("Source Code")
+codeWidget_dockWidget.setWidget(codeWidget)
+
 disassemblyWidget_dockWidget = QtGui.QDockWidget()
-disassemblyWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Disassembly"))
+disassemblyWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+disassemblyWidget_dockWidget.setWindowTitle("Disassembly")
 disassemblyWidget_dockWidget.setWidget(disassemblyWidget)
 
 localsWidget_dockWidget = QtGui.QDockWidget()
-localsWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Locals"))
+localsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+localsWidget_dockWidget.setWindowTitle("Locals")
 localsWidget_dockWidget.setWidget(localsWidget)
 
 registersWidget_dockWidget = QtGui.QDockWidget()
-registersWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Registers"))
+registersWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+registersWidget_dockWidget.setWindowTitle("Registers")
 registersWidget_dockWidget.setWidget(registersWidget)
 
 outputWidget_dockWidget = QtGui.QDockWidget()
-outputWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Output"))
+outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+outputWidget_dockWidget.setWindowTitle("Output")
 outputWidget_dockWidget.setWidget(outputWidget)
 
 settings = QtCore.QSettings()
@@ -460,12 +471,13 @@ class MainWindow(QtGui.QMainWindow):
     settings.endGroup()
 
 mainWindow = MainWindow()
-mainWindow.setCentralWidget(centralWidget)
-mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
+mainWindow.setCentralWidget(lldbWidget)
+mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, registersWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, outputWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, codeWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, disassemblyWidget_dockWidget)
 mainWindow.show()
 
 # print "Setting a breakpoint at '%s'" % "main"
@@ -509,7 +521,6 @@ class ZBugProcess:
         else:
           print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
           if state == lldb.eStateStopped:
-            self.__lldbDisplay.appendDebuggerOutput("Process %u stopped\n" % self.__process.GetProcessID())
             selectedThread = None
             if self.__process.IsValid() and self.__process.GetState() == lldb.eStateStopped:
               if self.__process.GetNumThreads() > 0:
@@ -533,17 +544,13 @@ class ZBugProcess:
             # process is running, don't say anything, we will always get one of these after resuming
             pass
           elif state == lldb.eStateUnloaded:
-            print "process %u unloaded, this shouldn't happen" % (self.__process.GetProcessID())
+            self.__lldbDisplay.appendDebuggerOutput("Process %u unloaded, this shouldn't happen!!!" % self.__process.GetProcessID())
             self.__process = None
           elif state == lldb.eStateConnected:
-            print "process connected"
             pass
           elif state == lldb.eStateAttaching:
-            print "process attaching"
             pass
           elif state == lldb.eStateLaunching:
-            print dir(event)
-            print "process launching"
             pass
       else:
         print 'Non-process event = %s' % (event)
@@ -586,6 +593,9 @@ zBugProcess = ZBugProcess(
 timer = QtCore.QTimer()
 timer.timeout.connect(zBugProcess.handleDebuggerEvents)
 timer.start(100)
+
+lldbDisplay.appendDebuggerOutput("Welcome to zBug version " + version + "\n")
+lldbDisplay.appendDebuggerOutput("Process has been launched and stopped.\n")
 
 sys.exit(app.exec_())
 
