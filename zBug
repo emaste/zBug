@@ -51,7 +51,7 @@ target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT
 app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
-app.setApplicationVersion("0.1.0")
+app.setApplicationVersion("0.2.0")
 
 settings = QtCore.QSettings()
 
