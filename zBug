@@ -661,9 +661,50 @@ class ZBugProcess:
           print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
           if state == lldb.eStateStopped:
             selectedThread = None
-            if self.__process.IsValid() and self.__process.GetState() == lldb.eStateStopped:
-              if self.__process.GetNumThreads() > 0:
-                selectedThread = self.__process.GetThreadAtIndex(0)
+            desc = None
+            for thread in self.__process:
+              frame = thread.GetFrameAtIndex(0)
+              shouldSelectThread = False
+              shouldDisplay = False
+              
+              stopReason = thread.GetStopReason()
+              # if self.verbose:
+              #   desc = "tid = %#x pc = %#x " % (thread.GetThreadID(),frame.GetPC()),
+              if stopReason == lldb.eStopReasonNone:
+                shouldDisplay = True
+              elif stopReason == lldb.eStopReasonTrace:
+                shouldSelectThread = True
+                shouldDisplay = True
+              elif stopReason == lldb.eStopReasonPlanComplete:
+                shouldSelectThread = True
+              # elif stopReason == lldb.eStopReasonThreadExiting:
+              #   self.__lldbDisplay.appendDebuggerOutput("Stop: thread exiting\n")
+              elif stopReason == lldb.eStopReasonExec:
+                shouldDisplay = True
+              elif stopReason == lldb.eStopReasonInvalid:
+                pass
+              elif stopReason == lldb.eStopReasonException:
+                shouldSelectThread = True
+                shouldDisplay = True
+              elif stopReason == lldb.eStopReasonBreakpoint:
+                shouldSelectThread = True
+                shouldDisplay = True
+              elif stopReason == lldb.eStopReasonWatchpoint:
+                shouldSelectThread = True
+                shouldDisplay = True
+              elif stopReason == lldb.eStopReasonSignal:
+                shouldSelectThread = True
+                shouldDisplay = True
+              
+              if shouldDisplay:
+                self.__lldbDisplay.appendDebuggerOutput("STOP %s\n" % thread.GetStopDescription(256))
+
+              if shouldSelectThread and not selectedThread:
+                selectedThread = thread
+                if not self.__process.SetSelectedThread(thread):
+                  selectedThread = None
+            # if selectedThread:
+            #   self.__lldbDisplay.appendDebuggerOutput(selectedThread.GetStopDescription(256))
             self.__stackWidget.setThread(selectedThread)
           elif state == lldb.eStateExited:
             exit_desc = self.__process.GetExitDescription()
