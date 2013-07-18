@@ -505,6 +505,7 @@ class StackWidget(QtGui.QTreeWidget):
     currentItem = self.currentItem()
     if currentItem:
       frame = currentItem.frame()
+      frame.GetThread().SetSelectedFrame(frame.GetFrameID())
       self.__codeWidget.setFrame(frame)
       self.__disassemblyWidget.setFrame(frame)
     else:
