@@ -10,6 +10,11 @@ if len(sys.argv) <= 1:
 executable = sys.argv[1]
 arguments = sys.argv[2:]
 
+debugger = lldb.SBDebugger.Create()
+debugger.SetAsync(True)
+
+target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT)
+
 app = QtGui.QApplication(sys.argv)
 
 font = QtGui.QFont()
@@ -120,21 +125,47 @@ class CodeWidget(QtGui.QPlainTextEdit):
     compileUnit = frame.GetCompileUnit()
     fileSpec = compileUnit.GetFileSpec()
     filename = fileSpec.GetFilename()
-    if not filename in files:
-      f = open(filename, 'r')
-      contents = f.read()
-      f.close()
-      self.__files[filename] = contents
+    if filename:
+      if not filename in self.__files:
+        f = open(filename, 'r')
+        contents = f.read()
+        f.close()
+        self.__files[filename] = contents
+      else:
+        contents = self.__files[filename]
+      self.setPlainText(contents)
+      lineEntry = frame.GetLineEntry()
+      line = lineEntry.GetLine()
+      self.moveToLine(line)
     else:
-      contents = self.__files[filename]
-    codeWidget.setDocumentTitle(filename)
-    codeWidget.setPlainText(contents)
-    lineEntry = frame.GetLineEntry()
-    line = lineEntry.GetLine()
-    self.moveToLine(line)
+      self.setPlainText("")
 
 codeWidget = CodeWidget()
 codeWidget.setReadOnly(True)
+
+class DisassemblyWidget(QtGui.QPlainTextEdit):
+  def __init__(self, parent=None):
+    QtGui.QPlainTextEdit.__init__(self, parent)
+
+    self.setFont(font)
+    self.setReadOnly(True)
+
+  def frame(self):
+    return self.__frame
+
+  def setFrame(self, frame):
+    self.__frame = frame
+    function = frame.GetFunction()
+    instructions = function.GetInstructions(target)
+    contents = ""
+    count = instructions.GetSize()
+    for i in range(0, count):
+      instruction = instructions.GetInstructionAtIndex(i)
+      contents += str(instruction)
+      contents += "\n"
+    self.setPlainText(contents)
+
+disassemblyWidget = DisassemblyWidget()
 
 class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self):
@@ -265,12 +296,14 @@ class StackWidget(QtGui.QTreeWidget):
   def __init__(
     self,
     codeWidget,
+    disassemblyWidget,
     localsWidget,
     registersWidget
     ):
     QtGui.QTreeWidget.__init__(self)
 
     self.__codeWidget = codeWidget
+    self.__disassemblyWidget = disassemblyWidget
     self.__localsWidget = localsWidget
     self.__registersWidget = registersWidget
 
@@ -288,6 +321,7 @@ class StackWidget(QtGui.QTreeWidget):
   def updateFrame(self):
     frame = self.currentItem().frame()
     self.__codeWidget.setFrame(frame)
+    self.__disassemblyWidget.setFrame(frame)
     self.__localsWidget.setFrame(frame)
     self.__registersWidget.setFrame(frame)
 
@@ -312,6 +346,7 @@ class StackWidget(QtGui.QTreeWidget):
 
 stackWidget = StackWidget(
   codeWidget,
+  disassemblyWidget,
   localsWidget,
   registersWidget
   )
@@ -357,6 +392,10 @@ stackWidget_dockWidget = QtGui.QDockWidget()
 stackWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Stack"))
 stackWidget_dockWidget.setWidget(stackWidget)
 
+disassemblyWidget_dockWidget = QtGui.QDockWidget()
+disassemblyWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Disassembly"))
+disassemblyWidget_dockWidget.setWidget(disassemblyWidget)
+
 localsWidget_dockWidget = QtGui.QDockWidget()
 localsWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Locals"))
 localsWidget_dockWidget.setWidget(localsWidget)
@@ -370,17 +409,10 @@ mainWindow.setCentralWidget(centralWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyWidget_dockWidget)
 mainWindow.show()
 
-files = {}
-
-debugger = lldb.SBDebugger.Create()
-debugger.SetAsync(True)
-
 command_interpreter = debugger.GetCommandInterpreter()
-
-print "Creating a target for '%s'" % executable
-target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT)
 
 print "Setting a breakpoint at '%s'" % "main"
 main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
