@@ -75,11 +75,12 @@ class CodeWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
 
-    self.__files = {}
+    self.__fileSpec = None
 
     self.setReadOnly(True)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setFont(font)
+    self.setCenterOnScroll(True)
 
     lineNumberArea = LineNumberArea(self)
     self.__lineNumberArea = lineNumberArea
@@ -98,23 +99,7 @@ class CodeWidget(QtGui.QPlainTextEdit):
         updateLineNumberAreaWidth(0)
     self.updateRequest.connect(updateLineNumberArea)
 
-    def highlightCurrentLine():
-      extraSelections = []
-      if True: #not self.isReadOnly():
-        selection = QtGui.QTextEdit.ExtraSelection()
-
-        lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
-
-        selection.format.setBackground(lineColor)
-        selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
-        selection.cursor = self.textCursor()
-        selection.cursor.clearSelection()
-        extraSelections.append(selection)
-      self.setExtraSelections(extraSelections);
-    self.cursorPositionChanged.connect(highlightCurrentLine)
-
     updateLineNumberAreaWidth(0)
-    highlightCurrentLine()
 
   def resizeEvent(self, event):
     QtGui.QWidget.resizeEvent(self, event)
@@ -154,34 +139,40 @@ class CodeWidget(QtGui.QPlainTextEdit):
       top = bottom
       bottom = top + int(self.blockBoundingRect(block).height())
       blockNumber = blockNumber + 1
-
-  def moveToLine(self, lineNumber):
+    
+  def highlightLine(self, lineNumber):
     document = self.document()
-    block = document.findBlockByLineNumber(lineNumber-1)
+    block = document.findBlockByLineNumber(lineNumber)
     textCursor = self.textCursor()
     textCursor.setPosition(block.position())
     self.setTextCursor(textCursor)
 
+    selection = QtGui.QTextEdit.ExtraSelection()
+    lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
+    selection.format.setBackground(lineColor)
+    selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+    selection.cursor = textCursor
+    selection.cursor.clearSelection()
+    self.setExtraSelections([selection]);
+
   def setFrame(self, frame):
-    compileUnit = frame.GetCompileUnit()
-    fileSpec = compileUnit.GetFileSpec()
-    filename = fileSpec.GetFilename()
-    if filename:
-      directory = fileSpec.GetDirectory()
-      pathname = os.path.join(directory, filename)
-      if not pathname in self.__files:
-        f = open(pathname, 'r')
+    lineEntry = frame.GetLineEntry()
+
+    fileSpec = lineEntry.GetFileSpec()
+    newFileSpec = fileSpec != self.__fileSpec
+    self.__fileSpec = fileSpec
+
+    if fileSpec.GetFilename():
+      if newFileSpec:
+        f = open(str(fileSpec), 'r')
         contents = f.read()
         f.close()
-        self.__files[pathname] = contents
-      else:
-        contents = self.__files[pathname]
-      self.setPlainText(contents)
-      lineEntry = frame.GetLineEntry()
+        self.setPlainText(contents)
       line = lineEntry.GetLine()
-      self.moveToLine(line)
+      self.highlightLine(line - 1)
     else:
-      self.clear()
+      self.setPlainText("(no source code for this location)")
+      self.setExtraSelections([])
 
 codeWidget = CodeWidget()
 codeWidget.setReadOnly(True)
