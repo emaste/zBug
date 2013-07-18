@@ -511,6 +511,7 @@ class ZBugProcess:
   def handleDebuggerEvents(self):
     event = lldb.SBEvent()
     while debugger.GetListener().GetNextEvent(event):
+      done = False
       if event.GetBroadcaster().GetName() == "lldb.process":
         if not self.__process:
           self.__process = target.GetProcess()
@@ -533,19 +534,19 @@ class ZBugProcess:
             else:
               self.__lldbDisplay.appendDebuggerOutput("Process %u exited with status %u\n" % (self.__process.GetProcessID(), self.__process.GetExitStatus()))
             self.__stackWidget.setThread(None)
-            self.__process = None
+            done = True
           elif state == lldb.eStateCrashed:
             self.__lldbDisplay.appendDebuggerOutput("Process %u crashed" % self.__process.GetProcessID())
-            self.__process = None
+            done = True
           elif state == lldb.eStateDetached:
             self.__lldbDisplay.appendDebuggerOutput("Process %u detached" % self.__process.GetProcessID())
-            self.__process = None
+            done = True
           elif state == lldb.eStateRunning:
             # process is running, don't say anything, we will always get one of these after resuming
             pass
           elif state == lldb.eStateUnloaded:
             self.__lldbDisplay.appendDebuggerOutput("Process %u unloaded, this shouldn't happen!!!" % self.__process.GetProcessID())
-            self.__process = None
+            done = True
           elif state == lldb.eStateConnected:
             pass
           elif state == lldb.eStateAttaching:
@@ -554,7 +555,6 @@ class ZBugProcess:
             pass
       else:
         print 'Non-process event = %s' % (event)
-    if self.__process:
       process_stdout = self.__process.GetSTDOUT(1024)
       if process_stdout:
         outputWidget.appendStdout(process_stdout)
@@ -567,6 +567,8 @@ class ZBugProcess:
         while process_stderr:
           process_stderr = self.__process.GetSTDERR(1024)
           outputWidget.appendStderr(process_stderr)
+      if done:
+        self.__process = None
 
 command_interpreter = debugger.GetCommandInterpreter()
 def executeCommand():
