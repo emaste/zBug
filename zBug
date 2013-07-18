@@ -234,8 +234,11 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
 disassemblyWidget = DisassemblyWidget()
 
 class ValueWidgetItem(QtGui.QTreeWidgetItem):
-  def __init__(self):
+  def __init__(self, value, includeType):
     QtGui.QTreeWidgetItem.__init__(self)
+
+    self.__value = value
+    self.__includeType = includeType
 
     self.setFont(0, font)
     self.setFont(1, font)
@@ -244,17 +247,38 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     self.__staticColor = QtGui.QColor(QtCore.Qt.white)
     self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
 
+    self.update()
+
+  def expanded(self):
+    count = self.__value.GetNumChildren()
+    for i in range(0, count):
+      childValue = self.__value.GetChildAtIndex(i)
+      childValueWidgetItem = ValueWidgetItem(childValue, self.__includeType)
+      self.addChild(childValueWidgetItem)
+
+  def collapsed(self):
+    self.takeChildren()
+
   def value(self):
     return self.__value
 
-  def setValue(self, value, includeType, visitedAddresses):
+  def update(self):
+    value = self.__value
+    includeType = self.__includeType
+
+    # print dir(value)
+    # stream = lldb.SBStream()
+    # value.GetExpressionPath(stream)
+    # print stream.GetData()
+
     column = 0
 
     self.setText(column, value.GetName())
     column += 1
 
+    valueTypeName = value.GetTypeName()
     if includeType:
-      self.setText(column, value.GetTypeName())
+      self.setText(column, valueTypeName)
       column += 1
 
     self.setText(column, value.GetValue())
@@ -265,14 +289,10 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     column += 1
 
     self.takeChildren()
-    address = value.GetAddress()
-    if not address in visitedAddresses:
-      count = value.GetNumChildren()
-      for i in range(0, count):
-        childValue = value.GetChildAtIndex(i)
-        childValueWidgetItem = ValueWidgetItem()
-        childValueWidgetItem.setValue(childValue, includeType, visitedAddresses + [address])
-        self.addChild(childValueWidgetItem)
+    if value.GetNumChildren() > 0:
+      self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.ShowIndicator)
+    else:
+      self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.DontShowIndicator)
 
 class LocalsWidget(QtGui.QTreeWidget):
   def __init__(self):
@@ -286,8 +306,14 @@ class LocalsWidget(QtGui.QTreeWidget):
       "Value"
     ])
 
-    self.expanded.connect(self.autosizeColumns)
-    self.collapsed.connect(self.autosizeColumns)
+    def itemExpanded(item):
+      item.expanded()
+      self.autosizeColumns()
+    self.itemExpanded.connect(itemExpanded)
+    def itemCollapsed(item):
+      item.collapsed()
+      self.autosizeColumns()
+    self.itemCollapsed.connect(itemCollapsed)
 
   def frame(self):
     return self.__frame
@@ -304,17 +330,14 @@ class LocalsWidget(QtGui.QTreeWidget):
       includeStatics,
       in_scope_only
       )
+
+    self.clear()
     count = variables.GetSize()
     for i in range(0, count):
       value = variables.GetValueAtIndex(i)
-      if i < self.topLevelItemCount():
-        valueWidgetItem = self.topLevelItem(i)
-      else:
-        valueWidgetItem = ValueWidgetItem()
-        self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value, includeType=True, visitedAddresses=[])
-    while self.topLevelItemCount() > count:
-      self.takeTopLevelItem(count)
+      valueWidgetItem = ValueWidgetItem(value, includeType=True)
+      self.addTopLevelItem(valueWidgetItem)
+
     self.autosizeColumns()
 
   def autosizeColumns(self):
@@ -338,6 +361,14 @@ class RegistersWidget(QtGui.QTreeWidget):
     self.setColumnWidth(0, settings.value("firstColumnWidth", 80))
     settings.endGroup()
 
+    def itemExpanded(item):
+      print dir(item)
+      item.expanded()
+    self.itemExpanded.connect(itemExpanded)
+    def itemCollapsed(item):
+      item.collapsed()
+    self.itemCollapsed.connect(itemCollapsed)
+
   def closeEvent(self, event):
     settings.beginGroup("RegistersWidget")
     settings.setValue("firstColumnWidth", self.columnWidth(0))
@@ -349,18 +380,13 @@ class RegistersWidget(QtGui.QTreeWidget):
   def setFrame(self, frame):
     self.__frame = frame
     registers = frame.GetRegisters()
+    self.clear()
     count = registers.GetSize()
     for i in range(0, count):
       value = registers.GetValueAtIndex(i)
-      if i < self.topLevelItemCount():
-        valueWidgetItem = self.topLevelItem(i)
-      else:
-        valueWidgetItem = ValueWidgetItem()
-        self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value, includeType=False, visitedAddresses=[])
+      valueWidgetItem = ValueWidgetItem(value, includeType=False)
+      self.addTopLevelItem(valueWidgetItem)
       valueWidgetItem.setFirstColumnSpanned(True)
-    while self.topLevelItemCount() > count:
-      self.takeTopLevelItem(count)
 
 registersWidget = RegistersWidget()
 
