@@ -503,20 +503,23 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     self.__lldbDisplay = lldbDisplay
     self.__lastCommand = None
 
-    def executeCommand():
+    def returnPressedCallback():
       command = str(self.text())
+      self.clear()
       if len(command) == 0 and self.__lastCommand != None:
         command = self.__lastCommand
-      lldbDisplay.appendCommand(command)
-      self.clear()
-      return_obj = lldb.SBCommandReturnObject()
-      self.__commandInterpreter.HandleCommand(command, return_obj)
-      if return_obj.Succeeded():
-        self.__lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
-      else:
-        self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
-      self.__lastCommand = command
-    self.returnPressed.connect(executeCommand)
+      self.executeCommand(command)
+    self.returnPressed.connect(returnPressedCallback)
+
+  def executeCommand(self, command):
+    lldbDisplay.appendCommand(command)
+    return_obj = lldb.SBCommandReturnObject()
+    self.__commandInterpreter.HandleCommand(command, return_obj)
+    if return_obj.Succeeded():
+      self.__lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
+    else:
+      self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
+    self.__lastCommand = command
 
 lldbCommandWidget = LLDBCommandWidget(
   debugger.GetCommandInterpreter(),
@@ -579,8 +582,32 @@ class MainWindow(QtGui.QMainWindow):
     settings.setValue("pos", self.pos())
     settings.endGroup()
 
+actions = []
+toolBar = QtGui.QToolBar()
+continueAction = toolBar.addAction("Continue")
+def continueCallback():
+  lldbCommandWidget.executeCommand("c")
+continueAction.triggered.connect(continueCallback)
+actions.append(continueAction)
+stepInAction = toolBar.addAction("Step In")
+def stepInCallback():
+  lldbCommandWidget.executeCommand("s")
+stepInAction.triggered.connect(stepInCallback)
+actions.append(stepInAction)
+stepOverAction = toolBar.addAction("Step Over")
+def stepOverCallback():
+  lldbCommandWidget.executeCommand("n")
+stepOverAction.triggered.connect(stepOverCallback)
+actions.append(stepOverAction)
+stepOutAction = toolBar.addAction("Step Out")
+def stepOutCallback():
+  lldbCommandWidget.executeCommand("fin")
+stepOutAction.triggered.connect(stepOutCallback)
+actions.append(stepOutAction)
+
 mainWindow = MainWindow()
 mainWindow.setCentralWidget(lldbWidget)
+mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
@@ -593,12 +620,13 @@ mainWindow.show()
 # main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
 
 class ZBugProcess:
-  def __init__(self, debugger, args, cwd, lldbDisplay, stackWidget):
+  def __init__(self, debugger, args, cwd, lldbDisplay, stackWidget, actions):
     self.__debugger = debugger
     self.__args = args
     self.__cwd = cwd
     self.__lldbDisplay = lldbDisplay
     self.__stackWidget = stackWidget
+    self.__actions = actions
     self.__process = None
 
     launchInfo = lldb.SBLaunchInfo(arguments)
@@ -672,13 +700,20 @@ class ZBugProcess:
           outputWidget.appendStderr(process_stderr)
       if done:
         self.__process = None
+    if self.__process != None and self.__process.GetState() == lldb.eStateStopped:
+      for action in self.__actions:
+        action.setEnabled(True)
+    else:
+      for action in self.__actions:
+        action.setEnabled(False)
 
 zBugProcess = ZBugProcess(
   debugger,
   arguments,
   os.getcwd(),
   lldbDisplay,
-  stackWidget
+  stackWidget,
+  actions
   )
 
 timer = QtCore.QTimer()
