@@ -654,18 +654,27 @@ class LLDBDisplay(QtGui.QTextEdit):
 
   def appendCommand(self, text):
     self.setTextColor(self.__commandColor)
-    cursor = self.textCursor()
-    cursor.insertText("> " + text + "\n")
+    charFormat = self.currentCharFormat()
+    textCursor = self.textCursor()
+    textCursor.movePosition(QtGui.QTextCursor.End)
+    textCursor.insertText("> " + text + "\n", charFormat)
+    self.ensureCursorVisible()
 
   def appendDebuggerOutput(self, text):
     self.setTextColor(self.__successOutputColor)
-    cursor = self.textCursor()
-    cursor.insertText(text)
+    charFormat = self.currentCharFormat()
+    textCursor = self.textCursor()
+    textCursor.movePosition(QtGui.QTextCursor.End)
+    textCursor.insertText(text, charFormat)
+    self.ensureCursorVisible()
 
   def appendDebuggerErrorOutput(self, text):
     self.setTextColor(self.__failureOutputColor)
-    cursor = self.textCursor()
-    cursor.insertText(text)
+    charFormat = self.currentCharFormat()
+    textCursor = self.textCursor()
+    textCursor.movePosition(QtGui.QTextCursor.End)
+    textCursor.insertText(text, charFormat)
+    self.ensureCursorVisible()
 
 lldbDisplay = LLDBDisplay()
 
