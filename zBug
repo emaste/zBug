@@ -266,27 +266,16 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     value = self.__value
     includeType = self.__includeType
 
-    # print dir(value)
-    # stream = lldb.SBStream()
-    # value.GetExpressionPath(stream)
-    # print stream.GetData()
+    self.setText(0, value.GetName())
 
-    column = 0
-
-    self.setText(column, value.GetName())
-    column += 1
-
-    valueTypeName = value.GetTypeName()
-    if includeType:
-      self.setText(column, valueTypeName)
-      column += 1
-
-    self.setText(column, value.GetValue())
+    self.setText(1, value.GetValue())
     if value.GetValueDidChange():
-      self.setBackground(column, self.__dynamicColor)
+      self.setBackground(1, self.__dynamicColor)
     else:
-      self.setBackground(column, self.__staticColor)
-    column += 1
+      self.setBackground(1, self.__staticColor)
+
+    if includeType:
+      self.setText(2, value.GetTypeName())
 
     self.takeChildren()
     if value.GetNumChildren() > 0:
@@ -302,18 +291,28 @@ class LocalsWidget(QtGui.QTreeWidget):
     self.setIndentation(12)
     self.setHeaderLabels([
       "Name",
-      "Type",
-      "Value"
+      "Value",
+      "Type"
     ])
+
+    settings.beginGroup("LocalsWidget")
+    self.setColumnWidth(0, settings.value("firstColumnWidth", 120))
+    self.setColumnWidth(1, settings.value("secondColumnWidth", 200))
+    settings.endGroup()
 
     def itemExpanded(item):
       item.expanded()
-      self.autosizeColumns()
     self.itemExpanded.connect(itemExpanded)
     def itemCollapsed(item):
       item.collapsed()
-      self.autosizeColumns()
     self.itemCollapsed.connect(itemCollapsed)
+
+  def hideEvent(self, event):
+    settings.beginGroup("LocalsWidget")
+    settings.setValue("firstColumnWidth", self.columnWidth(0))
+    settings.setValue("secondColumnWidth", self.columnWidth(1))
+    settings.endGroup()
+    QtGui.QTreeWidget.hideEvent(self, event)
 
   def frame(self):
     return self.__frame
@@ -337,12 +336,6 @@ class LocalsWidget(QtGui.QTreeWidget):
       value = variables.GetValueAtIndex(i)
       valueWidgetItem = ValueWidgetItem(value, includeType=True)
       self.addTopLevelItem(valueWidgetItem)
-
-    self.autosizeColumns()
-
-  def autosizeColumns(self):
-    self.resizeColumnToContents(0)
-    self.resizeColumnToContents(1)
 
 localsWidget = LocalsWidget()
 
@@ -369,10 +362,11 @@ class RegistersWidget(QtGui.QTreeWidget):
       item.collapsed()
     self.itemCollapsed.connect(itemCollapsed)
 
-  def closeEvent(self, event):
+  def hideEvent(self, event):
     settings.beginGroup("RegistersWidget")
     settings.setValue("firstColumnWidth", self.columnWidth(0))
     settings.endGroup()
+    QtGui.QTreeWidget.hideEvent(self, event)
 
   def frame(self):
     return self.__frame
