@@ -167,19 +167,21 @@ class CodeWidget(QtGui.QPlainTextEdit):
     fileSpec = compileUnit.GetFileSpec()
     filename = fileSpec.GetFilename()
     if filename:
-      if not filename in self.__files:
-        f = open(filename, 'r')
+      directory = fileSpec.GetDirectory()
+      pathname = os.path.join(directory, filename)
+      if not pathname in self.__files:
+        f = open(pathname, 'r')
         contents = f.read()
         f.close()
-        self.__files[filename] = contents
+        self.__files[pathname] = contents
       else:
-        contents = self.__files[filename]
+        contents = self.__files[pathname]
       self.setPlainText(contents)
       lineEntry = frame.GetLineEntry()
       line = lineEntry.GetLine()
       self.moveToLine(line)
     else:
-      self.setPlainText("")
+      self.clear()
 
 codeWidget = CodeWidget()
 codeWidget.setReadOnly(True)
@@ -191,7 +193,8 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
     self.setFont(font)
     self.setReadOnly(True)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
-
+    self.setCenterOnScroll(True)
+    
   def highlightLine(self, lineNumber):
     document = self.document()
     block = document.findBlockByLineNumber(lineNumber)
@@ -629,10 +632,14 @@ class ZBugProcess:
     self.__actions = actions
     self.__process = None
 
+    envVars = []
+    for key, value in os.environ.iteritems():
+      envVars.append("%s=%s" % (key, value))
     launchInfo = lldb.SBLaunchInfo(arguments)
     launchInfo.SetArguments
     launchInfo.SetWorkingDirectory(os.getcwd())
     launchInfo.SetLaunchFlags(lldb.eLaunchFlagStopAtEntry)
+    launchInfo.SetEnvironmentEntries(envVars, True)
 
     launchError = lldb.SBError()
     process = target.Launch(launchInfo, launchError)
