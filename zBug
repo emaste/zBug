@@ -54,6 +54,8 @@ app = QtGui.QApplication(sys.argv)
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
 
+settings = QtCore.QSettings()
+
 font = QtGui.QFont()
 font.setPointSize(12)
 font.setFamily("Courier")
@@ -243,7 +245,7 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     for i in range(0, count):
       childValue = value.GetChildAtIndex(i)
       childValueWidgetItem = ValueWidgetItem()
-      childValueWidgetItem.setValue(childValue)
+      childValueWidgetItem.setValue(childValue, includeType)
       self.addChild(childValueWidgetItem)
 
 class LocalsWidget(QtGui.QTreeWidget):
@@ -257,6 +259,9 @@ class LocalsWidget(QtGui.QTreeWidget):
       "Type",
       "Value"
     ])
+
+    self.expanded.connect(self.autosizeColumns)
+    self.collapsed.connect(self.autosizeColumns)
 
   def frame(self):
     return self.__frame
@@ -281,9 +286,12 @@ class LocalsWidget(QtGui.QTreeWidget):
       else:
         valueWidgetItem = ValueWidgetItem()
         self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value, includeType=False)
+      valueWidgetItem.setValue(value, includeType=True)
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
+    self.autosizeColumns()
+
+  def autosizeColumns(self):
     self.resizeColumnToContents(0)
     self.resizeColumnToContents(1)
 
@@ -299,6 +307,15 @@ class RegistersWidget(QtGui.QTreeWidget):
       "Name",
       "Value"
     ])
+
+    settings.beginGroup("RegistersWidget")
+    self.setColumnWidth(0, settings.value("firstColumnWidth", 80))
+    settings.endGroup()
+
+  def closeEvent(self, event):
+    settings.beginGroup("RegistersWidget")
+    settings.setValue("firstColumnWidth", self.columnWidth(0))
+    settings.endGroup()
 
   def frame(self):
     return self.__frame
@@ -318,8 +335,6 @@ class RegistersWidget(QtGui.QTreeWidget):
       valueWidgetItem.setFirstColumnSpanned(True)
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
-    self.resizeColumnToContents(0)
-    self.resizeColumnToContents(1)
 
 registersWidget = RegistersWidget()
 
@@ -501,8 +516,6 @@ outputWidget_dockWidget = QtGui.QDockWidget()
 outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
 outputWidget_dockWidget.setWindowTitle("Output")
 outputWidget_dockWidget.setWidget(outputWidget)
-
-settings = QtCore.QSettings()
 
 class MainWindow(QtGui.QMainWindow):
   def __init__(self):
