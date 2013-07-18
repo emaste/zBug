@@ -239,6 +239,9 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
 
     self.__value = value
     self.__includeType = includeType
+    self.__expanded = False
+    self.__existingChildren = {}
+    self.__wasExpanded = False
 
     self.setFont(0, font)
     self.setFont(1, font)
@@ -247,17 +250,16 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     self.__staticColor = QtGui.QColor(QtCore.Qt.white)
     self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
 
-    self.update()
-
   def expanded(self):
-    count = self.__value.GetNumChildren()
-    for i in range(0, count):
-      childValue = self.__value.GetChildAtIndex(i)
-      childValueWidgetItem = ValueWidgetItem(childValue, self.__includeType)
-      self.addChild(childValueWidgetItem)
+    if not self.__expanded:
+      self.__expanded = True
+      self.update()
 
   def collapsed(self):
-    self.takeChildren()
+    print "*****"
+    if self.__expanded:
+      self.__expanded = False
+      self.update()
 
   def value(self):
     return self.__value
@@ -277,15 +279,45 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     if includeType:
       self.setText(2, value.GetTypeName())
 
-    self.takeChildren()
     if value.GetNumChildren() > 0:
       self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.ShowIndicator)
     else:
       self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.DontShowIndicator)
 
+    self.takeChildren()
+    if self.__expanded:
+      count = value.GetNumChildren()
+      for i in range(0, count):
+        childValue = value.GetChildAtIndex(i)
+        childValueName = childValue.GetName()
+        if childValueName in self.__existingChildren:
+          childValueWidgetItem = self.__existingChildren[childValueName]
+        else:
+          childValueWidgetItem = ValueWidgetItem(childValue, self.__includeType)
+          self.__existingChildren[childValueName] = childValueWidgetItem
+        self.addChild(childValueWidgetItem)
+        childValueWidgetItem.update()
+    else:
+      self.__existingChildren = {}
+
+  def saveExpansionState(self):
+    self.__wasExpanded = self.treeWidget().isItemExpanded(self)
+    for i in range(0, self.childCount()):
+      self.child(i).saveExpansionState()
+
+  def restoreExpansionState(self):
+    for i in range(0, self.childCount()):
+      self.child(i).restoreExpansionState()
+    if self.__wasExpanded:
+      self.treeWidget().expandItem(self)
+    else:
+      self.treeWidget().collapseItem(self)
+
 class LocalsWidget(QtGui.QTreeWidget):
   def __init__(self):
     QtGui.QTreeWidget.__init__(self)
+
+    self.__existingItems = {}
 
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(12)
@@ -330,12 +362,28 @@ class LocalsWidget(QtGui.QTreeWidget):
       in_scope_only
       )
 
-    self.clear()
+    for i in range(0, self.topLevelItemCount()):
+      self.topLevelItem(i).saveExpansionState()
+
+    while self.topLevelItemCount() > 0:
+      self.takeTopLevelItem(0)
+
     count = variables.GetSize()
     for i in range(0, count):
       value = variables.GetValueAtIndex(i)
-      valueWidgetItem = ValueWidgetItem(value, includeType=True)
+      valueName = value.GetName()
+      if valueName in self.__existingItems:
+        valueWidgetItem = self.__existingItems[valueName]
+      else:
+        valueWidgetItem = ValueWidgetItem(value, includeType=True)
+        self.__existingItems[valueName] = valueWidgetItem
+
       self.addTopLevelItem(valueWidgetItem)
+      valueWidgetItem.update()
+
+    for i in range(0, self.topLevelItemCount()):
+      self.topLevelItem(i).restoreExpansionState()
+
 
 localsWidget = LocalsWidget()
 
@@ -355,7 +403,6 @@ class RegistersWidget(QtGui.QTreeWidget):
     settings.endGroup()
 
     def itemExpanded(item):
-      print dir(item)
       item.expanded()
     self.itemExpanded.connect(itemExpanded)
     def itemCollapsed(item):
