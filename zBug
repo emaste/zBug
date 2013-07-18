@@ -498,41 +498,49 @@ class StackWidget(QtGui.QTreeWidget):
     ])
 
     def currentItemChanged(newItem, oldItem):
-      self.updateInferiors()
+      currentItem = self.currentItem()
+      if currentItem:
+        frameIndex = self.indexOfTopLevelItem(currentItem)
+        thread = self.__process.GetSelectedThread()
+        thread.SetSelectedFrame(frameIndex)
+
+        frame = thread.GetFrameAtIndex(frameIndex)
+        self.__codeWidget.setFrame(frame)
+        self.__disassemblyWidget.setFrame(frame)
+      else:
+        frame = None
+      self.__localsWidget.setFrame(frame)
+      self.__registersWidget.setFrame(frame)
     self.currentItemChanged.connect(currentItemChanged)
 
-  def updateInferiors(self):
-    currentItem = self.currentItem()
-    if currentItem:
-      frame = currentItem.frame()
-      frame.GetThread().SetSelectedFrame(frame.GetFrameID())
-      self.__codeWidget.setFrame(frame)
-      self.__disassemblyWidget.setFrame(frame)
-    else:
-      frame = None
-    self.__localsWidget.setFrame(frame)
-    self.__registersWidget.setFrame(frame)
-
-  def setThread(self, thread):
+  def updateDisplay(self, process):
     self.setCurrentItem(None)
     enabled = False
-    if thread and thread.IsValid():
-      count = thread.GetNumFrames()
-      if count > 0:
-        self.clear()
-        for i in range(0, count):
-          frame = thread.GetFrameAtIndex(i)
-          stackWidgetItem = StackWidgetItem(frame)
-          self.addTopLevelItem(stackWidgetItem)
+    self.__process = None
 
-        self.resizeColumnToContents(0)
-        self.resizeColumnToContents(1)
+    if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
+      thread = process.GetSelectedThread()
+      if thread and thread.IsValid():
+        count = thread.GetNumFrames()
+        if count > 0:
+          self.__process = process
 
-        self.setCurrentItem(self.topLevelItem(0))
+          selectedFrame = thread.GetSelectedFrame()
+          selectedFrameID = selectedFrame.GetFrameID()
 
-        enabled = True
+          self.clear()
+          for i in range(0, count):
+            frame = thread.GetFrameAtIndex(i)
+            stackWidgetItem = StackWidgetItem(frame)
+            self.addTopLevelItem(stackWidgetItem)
+            if frame.GetFrameID() == selectedFrameID:
+              self.setCurrentItem(stackWidgetItem)
+
+          self.resizeColumnToContents(0)
+          self.resizeColumnToContents(1)
+
+          enabled = True
     self.setEnabled(enabled)
-    self.updateInferiors()
 
 stackWidget = StackWidget(
   codeWidget,
@@ -544,8 +552,6 @@ stackWidget = StackWidget(
 class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, thread):
     QtGui.QTreeWidgetItem.__init__(self)
-
-    self.__thread = thread
 
     self.setFont(0, font)
     self.setFont(1, font)
@@ -562,9 +568,6 @@ class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
     self.setText(2, thread.GetName())
     locationDesc = "%s:%d" % (frame.GetFunctionName(), line)
     self.setText(3, locationDesc)
-
-  def thread(self):
-    return self.__thread
 
 class ThreadsWidget(QtGui.QTreeWidget):
   def __init__(
@@ -588,33 +591,39 @@ class ThreadsWidget(QtGui.QTreeWidget):
     def currentItemChanged(newItem, oldItem):
       currentItem = self.currentItem()
       if currentItem:
-        thread = currentItem.thread()
+        threadIndex = self.indexOfTopLevelItem(currentItem)
+        thread = self.__process.GetThreadAtIndex(int(threadIndex))
+        self.__process.SetSelectedThread(thread)
       else:
         thread = None
-      self.__stackWidget.setThread(thread)
+      self.__stackWidget.updateDisplay(self.__process)
     self.currentItemChanged.connect(currentItemChanged)
 
-  def setProcess(self, process):
-    if process.GetState() != lldb.eStateRunning:
+  def updateDisplay(self, process):
+    self.setCurrentItem(None)
+    self.__process = None
+    enabled = False
+
+    if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
+      self.__process = process
+
       count = process.GetNumThreads()
       selectedThread = process.GetSelectedThread()
+      selectedThreadID = selectedThread.GetThreadID()
 
-      self.setCurrentItem(None)
       self.clear()
       for i in range(0, count):
         thread = process.GetThreadAtIndex(i)
         threadWidgetItem = ThreadsWidgetItem(thread)
         self.addTopLevelItem(threadWidgetItem)
-        # Why can't we just compare the threads directly??
-        if thread.GetThreadID() == selectedThread.GetThreadID():
+        if thread.GetThreadID() == selectedThreadID:
           self.setCurrentItem(threadWidgetItem)
 
       self.resizeColumnToContents(0)
       self.resizeColumnToContents(1)
 
-      self.setEnabled(True)
-    else:
-      self.setEnabled(False)
+      enabled = True
+    self.setEnabled(enabled)
 
 threadsWidget = ThreadsWidget(stackWidget)
 
@@ -679,11 +688,6 @@ class LLDBDisplay(QtGui.QTextEdit):
 
 lldbDisplay = LLDBDisplay()
 
-def updateDisplay(target):
-  process = target.GetProcess()
-  if process and process.IsValid():
-    threadsWidget.setProcess(process)
-
 class LLDBCommandWidget(QtGui.QLineEdit):
   def __init__(self, commandInterpreter, lldbDisplay):
     QtGui.QLineEdit.__init__(self)
@@ -711,7 +715,7 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     else:
       self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
     self.__lastCommand = command
-    updateDisplay(target)
+    stackWidget.updateDisplay(target.GetProcess())
 
 lldbCommandWidget = LLDBCommandWidget(
   debugger.GetCommandInterpreter(),
@@ -907,7 +911,6 @@ def handleDebuggerEvents():
             lldbDisplay.appendDebuggerOutput("Process %u exited with status %u: %s\n" % (process.GetProcessID(), process.GetExitStatus(), exit_desc))
           else:
             lldbDisplay.appendDebuggerOutput("Process %u exited with status %u\n" % (process.GetProcessID(), process.GetExitStatus()))
-          stackWidget.setThread(None)
         elif state == lldb.eStateCrashed:
           lldbDisplay.appendDebuggerOutput("Process %u crashed" % process.GetProcessID())
         elif state == lldb.eStateDetached:
@@ -937,7 +940,7 @@ def handleDebuggerEvents():
     else:
       print 'Non-process event = %s' % (event)
   if eventCount > 0:
-    updateDisplay(target)
+    threadsWidget.updateDisplay(target.GetProcess())
 
 timer = QtCore.QTimer()
 timer.timeout.connect(handleDebuggerEvents)
