@@ -16,9 +16,6 @@ font = QtGui.QFont()
 font.setPointSize(12)
 font.setFamily("Courier")
 
-boldFont = QtGui.QFont(font)
-boldFont.setBold(True)
-
 class LineNumberArea(QtGui.QWidget):
   def __init__(self, codeWidget):
     QtGui.QWidget.__init__(self, codeWidget)
@@ -139,7 +136,7 @@ class CodeWidget(QtGui.QPlainTextEdit):
 codeWidget = CodeWidget()
 codeWidget.setReadOnly(True)
 
-class LocalsWidgetItem(QtGui.QTreeWidgetItem):
+class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self):
     QtGui.QTreeWidgetItem.__init__(self)
 
@@ -162,11 +159,19 @@ class LocalsWidgetItem(QtGui.QTreeWidgetItem):
     else:
       self.setBackground(2, self.__staticColor)
 
+    self.takeChildren()
+    count = value.GetNumChildren()
+    for i in range(0, count):
+      childValue = value.GetChildAtIndex(i)
+      childValueWidgetItem = ValueWidgetItem()
+      childValueWidgetItem.setValue(childValue)
+      self.addChild(childValueWidgetItem)
+
 class LocalsWidget(QtGui.QTreeWidget):
   def __init__(self):
     QtGui.QTreeWidget.__init__(self)
 
-    self.setIndentation(0)
+    self.setIndentation(12)
     self.setHeaderLabels([
       "Name",
       "Type",
@@ -192,17 +197,50 @@ class LocalsWidget(QtGui.QTreeWidget):
     for i in range(0, count):
       value = variables.GetValueAtIndex(i)
       if i < self.topLevelItemCount():
-        localsWidgetItem = self.topLevelItem(i)
+        valueWidgetItem = self.topLevelItem(i)
       else:
-        localsWidgetItem = LocalsWidgetItem()
-        self.addTopLevelItem(localsWidgetItem)
-      localsWidgetItem.setValue(value)
+        valueWidgetItem = ValueWidgetItem()
+        self.addTopLevelItem(valueWidgetItem)
+      valueWidgetItem.setValue(value)
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
     self.resizeColumnToContents(0)
     self.resizeColumnToContents(1)
 
 localsWidget = LocalsWidget()
+
+class RegistersWidget(QtGui.QTreeWidget):
+  def __init__(self):
+    QtGui.QTreeWidget.__init__(self)
+
+    self.setIndentation(12)
+    self.setHeaderLabels([
+      "Name",
+      "Type",
+      "Value"
+    ])
+
+  def frame(self):
+    return self.__frame
+
+  def setFrame(self, frame):
+    self.__frame = frame
+    registers = frame.GetRegisters()
+    count = registers.GetSize()
+    for i in range(0, count):
+      value = registers.GetValueAtIndex(i)
+      if i < self.topLevelItemCount():
+        valueWidgetItem = self.topLevelItem(i)
+      else:
+        valueWidgetItem = ValueWidgetItem()
+        self.addTopLevelItem(valueWidgetItem)
+      valueWidgetItem.setValue(value)
+    while self.topLevelItemCount() > count:
+      self.takeTopLevelItem(count)
+    self.resizeColumnToContents(0)
+    self.resizeColumnToContents(1)
+
+registersWidget = RegistersWidget()
 
 class StackWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self):
@@ -224,11 +262,17 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
     self.setText(2, "%s:%d" % (frame.GetFunctionName(), line))
 
 class StackWidget(QtGui.QTreeWidget):
-  def __init__(self, codeWidget, localsWidget):
+  def __init__(
+    self,
+    codeWidget,
+    localsWidget,
+    registersWidget
+    ):
     QtGui.QTreeWidget.__init__(self)
 
     self.__codeWidget = codeWidget
     self.__localsWidget = localsWidget
+    self.__registersWidget = registersWidget
 
     self.setIndentation(0)
     self.setHeaderLabels([
@@ -245,6 +289,7 @@ class StackWidget(QtGui.QTreeWidget):
     frame = self.currentItem().frame()
     self.__codeWidget.setFrame(frame)
     self.__localsWidget.setFrame(frame)
+    self.__registersWidget.setFrame(frame)
 
   def setThread(self, thread):
     count = thread.GetNumFrames()
@@ -265,7 +310,11 @@ class StackWidget(QtGui.QTreeWidget):
     self.resizeColumnToContents(1)
     self.updateFrame()
 
-stackWidget = StackWidget(codeWidget, localsWidget)
+stackWidget = StackWidget(
+  codeWidget,
+  localsWidget,
+  registersWidget
+  )
 
 lineEdit = QtGui.QLineEdit()
 
@@ -312,8 +361,13 @@ localsWidget_dockWidget = QtGui.QDockWidget()
 localsWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Locals"))
 localsWidget_dockWidget.setWidget(localsWidget)
 
+registersWidget_dockWidget = QtGui.QDockWidget()
+registersWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Registers"))
+registersWidget_dockWidget.setWidget(registersWidget)
+
 mainWindow = QtGui.QMainWindow()
 mainWindow.setCentralWidget(centralWidget)
+mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.show()
