@@ -192,20 +192,41 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
     self.setReadOnly(True)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
 
+  def highlightLine(self, lineNumber):
+    document = self.document()
+    block = document.findBlockByLineNumber(lineNumber)
+    textCursor = self.textCursor()
+    textCursor.setPosition(block.position())
+    self.setTextCursor(textCursor)
+
+    selection = QtGui.QTextEdit.ExtraSelection()
+    lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
+    selection.format.setBackground(lineColor)
+    selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+    selection.cursor = textCursor
+    selection.cursor.clearSelection()
+    self.setExtraSelections([selection]);
+
   def frame(self):
     return self.__frame
 
   def setFrame(self, frame):
     self.__frame = frame
+    pc = frame.GetPC()
     function = frame.GetFunction()
     instructions = function.GetInstructions(target)
-    contents = ""
+    self.clear()
     count = instructions.GetSize()
+    lineNumberToHighlight = None
     for i in range(0, count):
       instruction = instructions.GetInstructionAtIndex(i)
-      contents += str(instruction)
-      contents += "\n"
-    self.setPlainText(contents)
+      address = instruction.GetAddress()
+      loadAddress = address.GetLoadAddress(target)
+      if loadAddress == pc:
+        lineNumberToHighlight = i
+      self.insertPlainText(str(instruction) + "\n")
+    if lineNumberToHighlight != None:
+      self.highlightLine(lineNumberToHighlight)
 
 disassemblyWidget = DisassemblyWidget()
 
