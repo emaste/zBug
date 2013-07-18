@@ -682,6 +682,8 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     self.__lldbDisplay = lldbDisplay
     self.__lastCommand = None
 
+    self.setFont(font)
+
     def returnPressedCallback():
       command = str(self.text())
       self.clear()
