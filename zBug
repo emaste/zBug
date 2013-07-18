@@ -330,7 +330,10 @@ class StackWidget(QtGui.QTreeWidget):
       self.__registersWidget.setFrame(frame)
 
   def setThread(self, thread):
-    count = thread.GetNumFrames()
+    if thread:
+      count = thread.GetNumFrames()
+    else:
+      count = 0
     for i in range(0, count):
       frame = thread.GetFrameAtIndex(i)
       if i < self.topLevelItemCount():
@@ -355,39 +358,66 @@ stackWidget = StackWidget(
   registersWidget
   )
 
-lineEdit = QtGui.QLineEdit()
+class OutputWidget(QtGui.QTextEdit):
+  def __init__(self):
+    QtGui.QTextEdit.__init__(self)
 
-class OutputDisplay(QtGui.QTextEdit):
-  def __init__(self, parent=None):
-    QtGui.QTextEdit.__init__(self, parent)
+    self.setReadOnly(True)
     self.setFont(font)
 
+    self.__stdoutColor = QtGui.QColor(QtCore.Qt.black)
+    self.__stderrColor = QtGui.QColor(QtCore.Qt.red).lighter(50)
+
+  def appendStdout(self, text):
+    self.setTextColor(self.__stdoutColor)
+    cursor = self.textCursor()
+    cursor.insertText(text)
+
+  def appendStderr(self, text):
+    self.setTextColor(self.__stderrColor)
+    cursor = self.textCursor()
+    cursor.insertText(text)
+
+outputWidget = OutputWidget()
+
+lineEdit = QtGui.QLineEdit()
+
+class LLDBDisplay(QtGui.QTextEdit):
+  def __init__(self, parent=None):
+    QtGui.QTextEdit.__init__(self, parent)
+
+    self.setReadOnly(True)
+    self.setFont(font)
+
+    self.__commandColor = QtGui.QColor(QtCore.Qt.blue).lighter(50)
+    self.__successOutputColor = QtGui.QColor(QtCore.Qt.green).lighter(50)
+    self.__failureOutputColor = QtGui.QColor(QtCore.Qt.green).lighter(50)
+
   def appendCommand(self, text):
-    self.setTextColor(QtCore.Qt.blue)
+    self.setTextColor(self.__commandColor)
     cursor = self.textCursor()
     cursor.insertText("> " + text + "\n")
 
   def appendDebuggerOutput(self, text):
-    self.setTextColor(QtCore.Qt.green)
+    self.setTextColor(self.__successOutputColor)
     cursor = self.textCursor()
-    cursor.insertText(text + "\n")
+    cursor.insertText(text)
 
   def appendDebuggerErrorOutput(self, text):
-    self.setTextColor(QtCore.Qt.red)
+    self.setTextColor(self.__failureOutputColor)
     cursor = self.textCursor()
-    cursor.insertText(text + "\n")
+    cursor.insertText(text)
 
-  def appendProgramOutput(self, text):
-    self.setTextColor(QtCore.Qt.black)
-    cursor = self.textCursor()
-    cursor.insertText(text + "\n")
+lldbDisplay = LLDBDisplay()
 
-outputDisplay = OutputDisplay()
+commandLayout = QtGui.QHBoxLayout()
+commandLayout.addWidget(QtGui.QLabel("lldb:"))
+commandLayout.addWidget(lineEdit)
 
 centralLayout = QtGui.QVBoxLayout()
 centralLayout.addWidget(codeWidget)
-centralLayout.addWidget(outputDisplay)
-centralLayout.addWidget(lineEdit)
+centralLayout.addWidget(lldbDisplay)
+centralLayout.addLayout(commandLayout)
 
 centralWidget = QtGui.QWidget()
 centralWidget.setLayout(centralLayout)
@@ -407,6 +437,10 @@ localsWidget_dockWidget.setWidget(localsWidget)
 registersWidget_dockWidget = QtGui.QDockWidget()
 registersWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Registers"))
 registersWidget_dockWidget.setWidget(registersWidget)
+
+outputWidget_dockWidget = QtGui.QDockWidget()
+outputWidget_dockWidget.setTitleBarWidget(QtGui.QLabel("Output"))
+outputWidget_dockWidget.setWidget(outputWidget)
 
 settings = QtCore.QSettings()
 
@@ -431,115 +465,128 @@ mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, outputWidget_dockWidget)
 mainWindow.show()
-
-command_interpreter = debugger.GetCommandInterpreter()
 
 # print "Setting a breakpoint at '%s'" % "main"
 # main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
 
-listener = debugger.GetListener()
+class ZBugProcess:
+  def __init__(self, debugger, args, cwd, lldbDisplay, stackWidget):
+    self.__debugger = debugger
+    self.__args = args
+    self.__cwd = cwd
+    self.__lldbDisplay = lldbDisplay
+    self.__stackWidget = stackWidget
+    self.__process = None
 
-launchError = lldb.SBError()
-process = target.Launch(
-  listener,
-  arguments,
-  None,   # envp
-  os.getcwd(),
-  None,   # stdin_path
-  None,   # stdout_path
-  None,   # stderr_path
-  True,   # stop_at_endtry
-  lldb.eLaunchFlagDebug,
-  launchError
-  )
-if not process or process.GetProcessID() == lldb.LLDB_INVALID_PROCESS_ID:
-  print "Launch failed: " + str(launchError)
-  sys.exit(1)
+    launchError = lldb.SBError()
+    process = target.Launch(
+      debugger.GetListener(),
+      arguments,
+      None,   # envp
+      os.getcwd(),
+      None,   # stdin_path
+      None,   # stdout_path
+      None,   # stderr_path
+      True,   # stop_at_endtry
+      lldb.eLaunchFlagDebug,
+      launchError
+      )
+    if not process or process.GetProcessID() == lldb.LLDB_INVALID_PROCESS_ID:
+      raise Exception("Launch failed: " + str(launchError))
 
-pid = process.GetProcessID()
-
-def handleDebuggerEvents():
-  done = False
-  if not done:
+  def handleDebuggerEvents(self):
     event = lldb.SBEvent()
-    if listener.GetNextEvent(event):
+    while debugger.GetListener().GetNextEvent(event):
       if event.GetBroadcaster().GetName() == "lldb.process":
-        state = lldb.SBProcess.GetStateFromEvent (event)
+        if not self.__process:
+          self.__process = target.GetProcess()
+        state = lldb.SBProcess.GetStateFromEvent(event)
         if state == lldb.eStateInvalid:
-            # Not a state event
-            print 'process event = %s' % (event)
+          # Not a state event
+          print 'process event = %s' % (event)
         else:
-            print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
-            if state == lldb.eStateStopped:
-              print "stopped"
-              selectedThread = process.GetSelectedThread()
-              if not selectedThread.IsValid():
-                selectedThread = process.GetThreadAtIndex(0)
-              stackWidget.setThread(selectedThread)
-            elif state == lldb.eStateExited:
-                exit_desc = process.GetExitDescription()
-                if exit_desc:
-                    print "process %u exited with status %u: %s" % (pid, process.GetExitStatus (), exit_desc)
-                else:
-                    print "process %u exited with status %u" % (pid, process.GetExitStatus ())
-                # run_commands (command_interpreter, options.exit_commands)
-                done = True
-            elif state == lldb.eStateCrashed:
-                print "process %u crashed" % (pid)
-                print_threads (process, options)
-                # run_commands (command_interpreter, options.crash_commands)
-                done = True
-            elif state == lldb.eStateDetached:
-                print "process %u detached" % (pid)
-                done = True
-            elif state == lldb.eStateRunning:
-              # process is running, don't say anything, we will always get one of these after resuming
-              pass
-            elif state == lldb.eStateUnloaded:
-              print "process %u unloaded, this shouldn't happen" % (pid)
-              done = True
-            elif state == lldb.eStateConnected:
-              print "process connected"
-            elif state == lldb.eStateAttaching:
-              print "process attaching"
-            elif state == lldb.eStateLaunching:
-              print "process launching"
+          print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
+          if state == lldb.eStateStopped:
+            self.__lldbDisplay.appendDebuggerOutput("Process %u stopped\n" % self.__process.GetProcessID())
+            selectedThread = None
+            if self.__process.IsValid() and self.__process.GetState() == lldb.eStateStopped:
+              if self.__process.GetNumThreads() > 0:
+                selectedThread = self.__process.GetThreadAtIndex(0)
+            self.__stackWidget.setThread(selectedThread)
+          elif state == lldb.eStateExited:
+            exit_desc = self.__process.GetExitDescription()
+            if exit_desc:
+              self.__lldbDisplay.appendDebuggerOutput("Process %u exited with status %u: %s\n" % (self.__process.GetProcessID(), self.__process.GetExitStatus(), exit_desc))
+            else:
+              self.__lldbDisplay.appendDebuggerOutput("Process %u exited with status %u\n" % (self.__process.GetProcessID(), self.__process.GetExitStatus()))
+            self.__stackWidget.setThread(None)
+            self.__process = None
+          elif state == lldb.eStateCrashed:
+            self.__lldbDisplay.appendDebuggerOutput("Process %u crashed" % self.__process.GetProcessID())
+            self.__process = None
+          elif state == lldb.eStateDetached:
+            self.__lldbDisplay.appendDebuggerOutput("Process %u detached" % self.__process.GetProcessID())
+            self.__process = None
+          elif state == lldb.eStateRunning:
+            # process is running, don't say anything, we will always get one of these after resuming
+            pass
+          elif state == lldb.eStateUnloaded:
+            print "process %u unloaded, this shouldn't happen" % (self.__process.GetProcessID())
+            self.__process = None
+          elif state == lldb.eStateConnected:
+            print "process connected"
+            pass
+          elif state == lldb.eStateAttaching:
+            print "process attaching"
+            pass
+          elif state == lldb.eStateLaunching:
+            print dir(event)
+            print "process launching"
+            pass
       else:
-          print 'Non-process event = %s' % (event)
-  process_stdout = process.GetSTDOUT(1024)
-  if process_stdout:
-    outputDisplay.appendProgramOutput(process_stdout)
-    while process_stdout:
-      process_stdout = process.GetSTDOUT(1024)
-      outputDisplay.appendProgramOutput(process_stdout)
-  process_stderr = process.GetSTDERR(1024)
-  if process_stderr:
-    outputDisplay.appendProgramOutput(process_stderr)
-    while process_stderr:
-      process_stderr = process.GetSTDERR(1024)
-      outputDisplay.appendProgramOutput(process_stderr)
+        print 'Non-process event = %s' % (event)
+    if self.__process:
+      process_stdout = self.__process.GetSTDOUT(1024)
+      if process_stdout:
+        outputWidget.appendStdout(process_stdout)
+        while process_stdout:
+          process_stdout = self.__process.GetSTDOUT(1024)
+          outputWidget.appendStdout(process_stdout)
+      process_stderr = self.__process.GetSTDERR(1024)
+      if process_stderr:
+        outputWidget.appendStderr(process_stderr)
+        while process_stderr:
+          process_stderr = self.__process.GetSTDERR(1024)
+          outputWidget.appendStderr(process_stderr)
 
+command_interpreter = debugger.GetCommandInterpreter()
 def executeCommand():
   command = str(lineEdit.text())
-  outputDisplay.appendCommand(command)
+  lldbDisplay.appendCommand(command)
   lineEdit.clear()
   return_obj = lldb.SBCommandReturnObject()
   command_interpreter.HandleCommand(command, return_obj)
   if return_obj.Succeeded():
-    outputDisplay.appendDebuggerOutput(return_obj.GetOutput())
+    lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
   else:
-    outputDisplay.appendDebuggerErrorOutput(return_obj.GetError())
+    lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
 lineEdit.returnPressed.connect(executeCommand)
 lineEdit.setFocus()
 
+zBugProcess = ZBugProcess(
+  debugger,
+  arguments,
+  os.getcwd(),
+  lldbDisplay,
+  stackWidget
+  )
+
 timer = QtCore.QTimer()
-timer.setInterval(100)
-timer.timeout.connect(handleDebuggerEvents)
-timer.start()
+timer.timeout.connect(zBugProcess.handleDebuggerEvents)
+timer.start(100)
 
-exitCode = app.exec_()
-
-sys.exit(exitCode)
+sys.exit(app.exec_())
 
 
