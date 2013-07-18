@@ -188,14 +188,22 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def value(self):
     return self.__value
 
-  def setValue(self, value):
-    self.setText(0, value.GetName())
-    self.setText(1, value.GetTypeName())
-    self.setText(2, value.GetValue())
+  def setValue(self, value, includeType):
+    column = 0
+
+    self.setText(column, value.GetName())
+    column += 1
+
+    if includeType:
+      self.setText(column, value.GetTypeName())
+      column += 1
+
+    self.setText(column, value.GetValue())
     if value.GetValueDidChange():
-      self.setBackground(2, self.__dynamicColor)
+      self.setBackground(column, self.__dynamicColor)
     else:
-      self.setBackground(2, self.__staticColor)
+      self.setBackground(column, self.__staticColor)
+    column += 1
 
     self.takeChildren()
     count = value.GetNumChildren()
@@ -240,7 +248,7 @@ class LocalsWidget(QtGui.QTreeWidget):
       else:
         valueWidgetItem = ValueWidgetItem()
         self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value)
+      valueWidgetItem.setValue(value, includeType=False)
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
     self.resizeColumnToContents(0)
@@ -256,7 +264,6 @@ class RegistersWidget(QtGui.QTreeWidget):
     self.setIndentation(12)
     self.setHeaderLabels([
       "Name",
-      "Type",
       "Value"
     ])
 
@@ -274,7 +281,8 @@ class RegistersWidget(QtGui.QTreeWidget):
       else:
         valueWidgetItem = ValueWidgetItem()
         self.addTopLevelItem(valueWidgetItem)
-      valueWidgetItem.setValue(value)
+      valueWidgetItem.setValue(value, includeType=False)
+      valueWidgetItem.setFirstColumnSpanned(True)
     while self.topLevelItemCount() > count:
       self.takeTopLevelItem(count)
     self.resizeColumnToContents(0)
