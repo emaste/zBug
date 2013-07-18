@@ -772,30 +772,42 @@ class MainWindow(QtGui.QMainWindow):
     settings.setValue("pos", self.pos())
     settings.endGroup()
 
-actions = []
+runningActions = []
+stoppedActions = []
+
 toolBar = QtGui.QToolBar()
+interruptAction = toolBar.addAction("Interrupt")
+
+def interruptCallback():
+  lldbCommandWidget.executeCommand("process interrupt")
+interruptAction.triggered.connect(interruptCallback)
+runningActions.append(interruptAction)
+
 continueAction = toolBar.addAction("Continue")
 def continueCallback():
-  lldbCommandWidget.executeCommand("c")
+  lldbCommandWidget.executeCommand("process continue")
 continueAction.triggered.connect(continueCallback)
-actions.append(continueAction)
+stoppedActions.append(continueAction)
+
 stepInAction = toolBar.addAction("Step In")
 def stepInCallback():
-  lldbCommandWidget.executeCommand("s")
+  lldbCommandWidget.executeCommand("thread step-in")
 stepInAction.triggered.connect(stepInCallback)
-actions.append(stepInAction)
+stoppedActions.append(stepInAction)
+
 stepOverAction = toolBar.addAction("Step Over")
 def stepOverCallback():
-  lldbCommandWidget.executeCommand("n")
+  lldbCommandWidget.executeCommand("thread step-over")
 stepOverAction.triggered.connect(stepOverCallback)
-actions.append(stepOverAction)
+stoppedActions.append(stepOverAction)
+
 stepOutAction = toolBar.addAction("Step Out")
 def stepOutCallback():
-  lldbCommandWidget.executeCommand("fin")
+  lldbCommandWidget.executeCommand("thread step-out")
 stepOutAction.triggered.connect(stepOutCallback)
-actions.append(stepOutAction)
+stoppedActions.append(stepOutAction)
 
-mainWindow = MainWindow()
+mainWindow = MainWindow(executable)
 mainWindow.setCentralWidget(lldbWidget)
 mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, registersWidget_dockWidget)
@@ -903,10 +915,14 @@ def handleDebuggerEvents():
           pass
 
       if process.GetState() == lldb.eStateStopped:
-        for action in actions:
+        for action in runningActions:
+          action.setEnabled(False)
+        for action in stoppedActions:
           action.setEnabled(True)
       else:
-        for action in actions:
+        for action in runningActions:
+          action.setEnabled(True)
+        for action in stoppedActions:
           action.setEnabled(False)
     else:
       print 'Non-process event = %s' % (event)
