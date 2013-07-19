@@ -36,7 +36,6 @@ except ImportError:
                 except ImportError:
                     pass
                 else:
-                    print 'imported lldb from: "%s"' % (lldb_python_dir)
                     success = True
                     break
     if not success:
