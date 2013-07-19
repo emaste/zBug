@@ -21,12 +21,10 @@ To use zBug, you must meet the following requirements:
 
 - You must have LLDB installed with its Python bindings.
 
-    .. describe:: OS X
-        
+    OS X:
         LLDB comes with Xcode on OS X; on other platforms, it can be installed using the OS package manager or it can be obtained directly from http://lldb.llvm.org.
 
-    .. describe:: Debian/Ubuntu
-        
+    Debian/Ubuntu
         For more information on installing LLDB (and other LLVM tools) on Debian and Ubuntu, see http://llvm.org/apt/
 
 Installation
