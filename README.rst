@@ -19,7 +19,15 @@ To use zBug, you must meet the following requirements:
 
 - You must have PySide installed.  PySide can be installed using your OS package manager (or MacPorts on OS X), or can be obtained directly from http://qt-project.org/wiki/PySide.
 
-- You must have LLDB installed with its Python bindings.  LLDB comes with Xcode on OS X; on other platforms, it can be installed using the OS package manager or it can be obtained directly from http://lldb.llvm.org.
+- You must have LLDB installed with its Python bindings.
+
+    OS X:
+
+        LLDB comes with Xcode on OS X; on other platforms, it can be installed using the OS package manager or it can be obtained directly from http://lldb.llvm.org.
+
+    Debian/Ubuntu:
+
+        For more information on installing LLDB (and other LLVM tools) on Debian and Ubuntu, see http://llvm.org/apt/
 
 Installation
 ------------
