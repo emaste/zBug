@@ -153,28 +153,37 @@ class CodeWidget(QtGui.QPlainTextEdit):
     selection.cursor.clearSelection()
     self.setExtraSelections([selection]);
 
-  def setFrame(self, frame):
-    lineEntry = frame.GetLineEntry()
-
-    fileSpec = lineEntry.GetFileSpec()
-    if fileSpec.GetFilename():
-      pathname = str(fileSpec)
-    else:
-      pathname = ""
+  def updateDisplay(self, pathname, lineNumber):
     newPathname = pathname != self.__pathname
     self.__pathname = pathname
 
     if len(pathname) > 0:
       if newPathname:
-        f = open(pathname, 'r')
-        contents = f.read()
-        f.close()
+        try:
+          f = open(pathname, 'r')
+          contents = f.read()
+          f.close()
+        except IOError as e:
+          contents = "Unable to read file:\n  %s\n" % str(e)
+          lineNumber = 0
         self.setPlainText(contents)
-      line = lineEntry.GetLine()
-      self.highlightLine(line - 1)
     else:
-      self.setPlainText("(no source code for this location)")
+      self.setPlainText("No source code for this location")
+      lineNumber = 0
+
+    if lineNumber >= 1:
+      self.highlightLine(lineNumber - 1)
+    else:
       self.setExtraSelections([])
+
+  def updateDisplayForLineEntry(self, lineEntry):
+    fileSpec = lineEntry.GetFileSpec()
+    if fileSpec.GetFilename():
+      pathname = str(fileSpec)
+    else:
+      pathname = ""
+    lineNumber = lineEntry.GetLine()
+    self.updateDisplay(pathname, lineNumber)
 
 codeWidget = CodeWidget()
 codeWidget.setReadOnly(True)
@@ -463,11 +472,9 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
     self.setTextAlignment(1, QtCore.Qt.AlignRight)
     self.setFont(2, font)
 
-    lineEntry = frame.GetLineEntry()
-    line = lineEntry.GetLine()
     self.setText(0, "%d" % frame.GetFrameID())
     self.setText(1, "%#x" % frame.GetPC())
-    self.setText(2, "%s:%d" % (frame.GetFunctionName(), line))
+    self.setText(2, "%s" % (frame.GetFunctionName()))
 
   def frame(self):
     return self.__frame
@@ -504,7 +511,7 @@ class StackWidget(QtGui.QTreeWidget):
         thread.SetSelectedFrame(frameIndex)
 
         frame = thread.GetFrameAtIndex(frameIndex)
-        self.__codeWidget.setFrame(frame)
+        self.__codeWidget.updateDisplayForLineEntry(frame.GetLineEntry())
         self.__disassemblyWidget.setFrame(frame)
       else:
         frame = None
@@ -559,13 +566,11 @@ class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
 
     process = thread.GetProcess()
     frame = thread.GetFrameAtIndex(0)
-    lineEntry = frame.GetLineEntry()
-    line = lineEntry.GetLine()
 
     self.setText(0, "%u" % thread.GetIndexID())
     self.setText(1, "%#x" % thread.GetThreadID())
     self.setText(2, thread.GetName())
-    locationDesc = "%s:%d" % (frame.GetFunctionName(), line)
+    locationDesc = "%s" % (frame.GetFunctionName())
     self.setText(3, locationDesc)
 
 class ThreadsWidget(QtGui.QTreeWidget):
@@ -649,8 +654,8 @@ class OutputWidget(QtGui.QTextEdit):
 
 outputWidget = OutputWidget()
 
-class SymbolSearchQueryWidget(QtGui.QLineEdit):
-  search = QtCore.Signal(basestring)
+class SourcesFilterWidget(QtGui.QLineEdit):
+  filterChanged = QtCore.Signal(basestring)
 
   def __init__(self):
     QtGui.QLineEdit.__init__(self)
@@ -660,30 +665,68 @@ class SymbolSearchQueryWidget(QtGui.QLineEdit):
     def returnPressed():
       text = self.text()
       self.selectAll()
-      self.search.emit(text)
+      self.filterChanged.emit(text)
     self.returnPressed.connect(returnPressed)
 
-symbolSearchQueryWidget = SymbolSearchQueryWidget()
-symbolSearchQueryLayout = QtGui.QHBoxLayout()
-symbolSearchQueryLayout.addWidget(QtGui.QLabel("Search:"))
-symbolSearchQueryLayout.addWidget(symbolSearchQueryWidget)
+sourcesFilterWidget = SourcesFilterWidget()
+sourcesFilterLayout = QtGui.QHBoxLayout()
+sourcesFilterLayout.addWidget(QtGui.QLabel("Filter:"))
+sourcesFilterLayout.addWidget(sourcesFilterWidget)
 
-class SymbolSearchResultsWidget(QtGui.QTableWidget):
+class SourcesResultsWidget(QtGui.QTreeWidget):
   def __init__(self):
-    QtGui.QTableWidget.__init__(self)
+    QtGui.QTreeWidget.__init__(self)
+
+    self.setIndentation(0)
+    self.setHeaderLabels([
+      "Filename",
+      "Directory"
+      ])
+
+    def currentItemChanged(newItem, oldItem):
+      currentItem = self.currentItem()
+      if currentItem:
+        filename = currentItem.text(0)
+        directory = currentItem.text(1)
+        pathname = os.path.join(directory, filename)
+        codeWidget.updateDisplay(pathname, 0)
+    self.currentItemChanged.connect(currentItemChanged)
     
-  def search(self, text):
-    print text
+    self.setFilter("")
 
-symbolSearchResultsWidget = SymbolSearchResultsWidget()
-symbolSearchQueryWidget.search.connect(symbolSearchResultsWidget.search)
+  def setFilter(self, text):
+    self.__filter = text
+    self.updateDisplay()
 
-symbolSearchLayout = QtGui.QVBoxLayout()
-symbolSearchLayout.addLayout(symbolSearchQueryLayout)
-symbolSearchLayout.addWidget(symbolSearchResultsWidget)
+  def updateDisplay(self):
+    # self.setSortingEnabled(False)
+    self.clear()
+    count = target.GetNumModules()
+    for i in range(0, count):
+      module = target.GetModuleAtIndex(i)
+      compileUnitCount = module.GetNumCompileUnits()
+      for j in range(0, compileUnitCount):
+        compileUnit = module.GetCompileUnitAtIndex(j)
+        fileSpec = compileUnit.GetFileSpec()
+        filename = fileSpec.GetFilename()
+        directory = fileSpec.GetDirectory()
+        if len(self.__filter) == 0 or self.__filter in filename or self.__filter in directory:
+          tableWidgetItem = QtGui.QTreeWidgetItem()
+          tableWidgetItem.setText(0, filename)
+          tableWidgetItem.setText(1, directory)
+          self.addTopLevelItem(tableWidgetItem)
+    # self.setSortingEnabled(True)
+    self.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
-symbolSearchWidget = QtGui.QWidget()
-symbolSearchWidget.setLayout(symbolSearchLayout)
+sourcesResultsWidget = SourcesResultsWidget()
+sourcesFilterWidget.filterChanged.connect(sourcesResultsWidget.setFilter)
+
+sourcesLayout = QtGui.QVBoxLayout()
+sourcesLayout.addLayout(sourcesFilterLayout)
+sourcesLayout.addWidget(sourcesResultsWidget)
+
+sourcesWidget = QtGui.QWidget()
+sourcesWidget.setLayout(sourcesLayout)
 
 class LLDBDisplay(QtGui.QTextEdit):
   def __init__(self):
@@ -808,10 +851,10 @@ outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QD
 outputWidget_dockWidget.setWindowTitle("Output")
 outputWidget_dockWidget.setWidget(outputWidget)
 
-symbolSearchWidget_dockWidget = QtGui.QDockWidget()
-symbolSearchWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-symbolSearchWidget_dockWidget.setWindowTitle("Symbols")
-symbolSearchWidget_dockWidget.setWidget(symbolSearchWidget)
+sourcesWidget_dockWidget = QtGui.QDockWidget()
+sourcesWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+sourcesWidget_dockWidget.setWindowTitle("Sources")
+sourcesWidget_dockWidget.setWidget(sourcesWidget)
 
 class MainWindow(QtGui.QMainWindow):
   def __init__(self, executable):
@@ -874,13 +917,10 @@ mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, symbolSearchWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
 mainWindow.show()
-
-# print "Setting a breakpoint at '%s'" % "main"
-# main_bp = target.BreakpointCreateByName("main", target.GetExecutable().GetFilename())
 
 def handleDebuggerEvents():
   event = lldb.SBEvent()
@@ -909,7 +949,6 @@ def handleDebuggerEvents():
         # Not a state event
         print 'process event = %s' % (event)
       else:
-        print "process state changed event: %s" % (lldb.SBDebugger.StateAsCString(state))
         if state == lldb.eStateStopped:
           didSelectThread = False
           for thread in process:
@@ -987,6 +1026,7 @@ def handleDebuggerEvents():
       print 'Non-process event = %s' % (event)
   if eventCount > 0:
     threadsWidget.updateDisplay(target.GetProcess())
+    sourcesResultsWidget.updateDisplay()
 
 timer = QtCore.QTimer()
 timer.timeout.connect(handleDebuggerEvents)
