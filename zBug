@@ -161,6 +161,8 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
     self.__marginLabels = []
     self.__maxMarginLabelLen = 1
     self.clear()
+    if len(contents) == 0:
+      contents = [[" ", ""]]
     for contentItem in contents:
       self.__marginLabels.append(contentItem[0])
       marginLabelLen = len(contentItem[0])
