@@ -726,7 +726,7 @@ class ThreadsWidget(QtGui.QTreeWidget):
 
 threadsWidget = ThreadsWidget(stackWidget)
 
-class OutputWidget(QtGui.QTextEdit):
+class AppendingTextWidget(QtGui.QTextEdit):
   def __init__(self):
     QtGui.QTextEdit.__init__(self)
 
@@ -734,18 +734,26 @@ class OutputWidget(QtGui.QTextEdit):
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setFont(font)
 
+  def append(self, text, color):
+    self.setTextColor(color)
+    charFormat = self.currentCharFormat()
+    textCursor = self.textCursor()
+    textCursor.movePosition(QtGui.QTextCursor.End)
+    textCursor.insertText(text, charFormat)
+    self.ensureCursorVisible()
+
+class OutputWidget(AppendingTextWidget):
+  def __init__(self):
+    AppendingTextWidget.__init__(self)
+
     self.__stdoutColor = QtGui.QColor(QtCore.Qt.black)
     self.__stderrColor = QtGui.QColor(QtCore.Qt.red).lighter(50)
 
   def appendStdout(self, text):
-    self.setTextColor(self.__stdoutColor)
-    cursor = self.textCursor()
-    cursor.insertText(text)
+    self.append(text, self.__stdoutColor)
 
   def appendStderr(self, text):
-    self.setTextColor(self.__stderrColor)
-    cursor = self.textCursor()
-    cursor.insertText(text)
+    self.append(text, self.__stderrColor)
 
 outputWidget = OutputWidget()
 
@@ -823,41 +831,22 @@ sourcesLayout.addWidget(sourcesResultsWidget)
 sourcesWidget = QtGui.QWidget()
 sourcesWidget.setLayout(sourcesLayout)
 
-class LLDBDisplay(QtGui.QTextEdit):
+class LLDBDisplay(AppendingTextWidget):
   def __init__(self):
-    QtGui.QTextEdit.__init__(self)
-
-    self.setReadOnly(True)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
-    self.setFont(font)
+    AppendingTextWidget.__init__(self)
 
     self.__commandColor = QtGui.QColor(QtCore.Qt.blue).lighter(50)
     self.__successOutputColor = QtGui.QColor(QtCore.Qt.green).lighter(50)
     self.__failureOutputColor = QtGui.QColor(QtCore.Qt.green).lighter(50)
 
   def appendCommand(self, text):
-    self.setTextColor(self.__commandColor)
-    charFormat = self.currentCharFormat()
-    textCursor = self.textCursor()
-    textCursor.movePosition(QtGui.QTextCursor.End)
-    textCursor.insertText("> " + text + "\n", charFormat)
-    self.ensureCursorVisible()
+    self.append("> " + text + "\n", self.__commandColor)
 
   def appendDebuggerOutput(self, text):
-    self.setTextColor(self.__successOutputColor)
-    charFormat = self.currentCharFormat()
-    textCursor = self.textCursor()
-    textCursor.movePosition(QtGui.QTextCursor.End)
-    textCursor.insertText(text, charFormat)
-    self.ensureCursorVisible()
+    self.append(text, self.__successOutputColor)
 
   def appendDebuggerErrorOutput(self, text):
-    self.setTextColor(self.__failureOutputColor)
-    charFormat = self.currentCharFormat()
-    textCursor = self.textCursor()
-    textCursor.movePosition(QtGui.QTextCursor.End)
-    textCursor.insertText(text, charFormat)
-    self.ensureCursorVisible()
+    self.append(text, self.__failureOutputColor)
 
 lldbDisplay = LLDBDisplay()
 
