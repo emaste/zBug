@@ -442,8 +442,8 @@ class LocalsWidget(QtGui.QTreeWidget):
     ])
 
     settings.beginGroup("LocalsWidget")
-    self.setColumnWidth(0, settings.value("firstColumnWidth", 120))
-    self.setColumnWidth(1, settings.value("secondColumnWidth", 200))
+    self.setColumnWidth(0, int(settings.value("firstColumnWidth", 120)))
+    self.setColumnWidth(1, int(settings.value("secondColumnWidth", 200)))
     settings.endGroup()
 
     def itemExpanded(item):
@@ -516,7 +516,7 @@ class RegistersWidget(QtGui.QTreeWidget):
     ])
 
     settings.beginGroup("RegistersWidget")
-    self.setColumnWidth(0, settings.value("firstColumnWidth", 80))
+    self.setColumnWidth(0, int(settings.value("firstColumnWidth", 80)))
     settings.endGroup()
 
     def itemExpanded(item):
@@ -955,6 +955,8 @@ class MainWindow(QtGui.QMainWindow):
     settings.beginGroup("MainWindow")
     self.resize(settings.value("size", QtCore.QSize(800, 600)))
     self.move(settings.value("pos", QtCore.QPoint(200, 200)))
+    if settings.value("isMaximized", self.isMaximized()):
+      self.showMaximized()
     settings.endGroup()
 
     title = "%s: %s" % (app.applicationName(), executable)
@@ -964,6 +966,7 @@ class MainWindow(QtGui.QMainWindow):
     settings.beginGroup("MainWindow")
     settings.setValue("size", self.size())
     settings.setValue("pos", self.pos())
+    settings.setValue("isMaximized", self.isMaximized())
     settings.endGroup()
 
 runningActions = []
