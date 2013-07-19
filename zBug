@@ -294,45 +294,51 @@ class DisassemblyDisplayWidget(CodeDisplayWidget):
   def __init__(self):
     CodeDisplayWidget.__init__(self)
 
-    self.__functionOrSymbol = None
-
   def frame(self):
     return self.__frame
 
   def setFrame(self, frame):
     self.__frame = frame
     pc = frame.GetPC()
+    pcAddress = frame.GetPCAddress()
 
-    functionOrSymbol = frame.GetFunction()
-    if not functionOrSymbol:
-      functionOrSymbol = frame.GetSymbol()
-    newFunctionOrSymbol = functionOrSymbol != self.__functionOrSymbol
-    self.__functionOrSymbol = functionOrSymbol
+    function = frame.GetFunction()
+    if function:
+      instructions = function.GetInstructions(target)
+    else:
+      symbol = frame.GetSymbol()
+      if symbol:
+        instructions = symbol.GetInstructions(target)
+      else:
+        data = lldb.SBData()
+        error = lldb.SBError()
+        data = bytearray(frame.GetThread().GetProcess().ReadMemory(pc, 1024, error))
+        instructions = target.GetInstructions(pcAddress, data)
 
-    instructions = functionOrSymbol.GetInstructions(target)
-    if newFunctionOrSymbol:
-      self.clear()
+    self.clear()
     count = instructions.GetSize()
     contents = []
+    lineCount = 0
     lineNumberToHighlight = None
     for i in range(0, count):
       instruction = instructions.GetInstructionAtIndex(i)
       address = instruction.GetAddress()
       loadAddress = address.GetLoadAddress(target)
+      if loadAddress < pc - 256 or loadAddress > pc + 256:
+        continue
       if loadAddress == pc:
-        lineNumberToHighlight = i
-      if newFunctionOrSymbol:
-        mnemonic = instruction.GetMnemonic(target)
-        operands =  instruction.GetOperands(target)
-        comment =  instruction.GetComment(target)
-        desc = "%-8s %s" % (mnemonic, operands)
-        if comment:
-          if len(desc) < 32:
-            desc += ' ' * (32 - len(desc))
-          desc += "; %s" % comment
-        contents.append(["%#x" % loadAddress, desc])
-    if newFunctionOrSymbol:
-      self.setContents(contents)
+        lineNumberToHighlight = lineCount
+      mnemonic = instruction.GetMnemonic(target)
+      operands =  instruction.GetOperands(target)
+      comment =  instruction.GetComment(target)
+      desc = "%-8s %s" % (mnemonic, operands)
+      if comment:
+        if len(desc) < 32:
+          desc += ' ' * (32 - len(desc))
+        desc += "; %s" % comment
+      contents.append(["%#x" % loadAddress, desc])
+      lineCount += 1
+    self.setContents(contents)
 
     if lineNumberToHighlight != None:
       self.highlightLine(lineNumberToHighlight)
