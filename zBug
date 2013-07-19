@@ -59,17 +59,106 @@ font.setPointSize(12)
 font.setFamily("Courier")
 
 class LineNumberArea(QtGui.QWidget):
-  def __init__(self, codeWidget):
-    QtGui.QWidget.__init__(self, codeWidget)
-    self.__codeWidget = codeWidget
+  def __init__(self, sourceCodeDisplayWidget):
+    QtGui.QWidget.__init__(self, sourceCodeDisplayWidget)
+    self.__sourceCodeDisplayWidget = sourceCodeDisplayWidget
 
   def sizeHint(self):
-    return QtCore.QSize(self.__codeWidget.lineNumberAreaWidth(), 0)
+    return QtCore.QSize(self.__sourceCodeDisplayWidget.lineNumberAreaWidth(), 0)
 
   def paintEvent(self, event):
-    self.__codeWidget.lineNumberAreaPaintEvent(event)
+    self.__sourceCodeDisplayWidget.lineNumberAreaPaintEvent(event)
 
-class CodeWidget(QtGui.QPlainTextEdit):
+class CodeDisplayWidget(QtGui.QPlainTextEdit):
+  def __init__(self):
+    QtGui.QPlainTextEdit.__init__(self)
+
+    self.setReadOnly(True)
+    self.setFocusPolicy(QtCore.Qt.NoFocus)
+    self.setFont(font)
+    self.setCenterOnScroll(True)
+
+    lineNumberArea = LineNumberArea(self)
+    self.__lineNumberArea = lineNumberArea
+
+    self.__marginLabels = [" "]
+    self.__maxMarginLabelLen = 1
+
+    def updateLineNumberArea(rect, dy):
+      if dy != 0:
+        lineNumberArea.scroll(0, dy)
+      else:
+        lineNumberArea.update(0, rect.y(), lineNumberArea.width(), rect.height())
+
+      if rect.contains(self.viewport().rect()):
+        self.updateLineNumberAreaWidth()
+    self.updateRequest.connect(updateLineNumberArea)
+
+    self.updateLineNumberAreaWidth()
+
+  def resizeEvent(self, event):
+    QtGui.QWidget.resizeEvent(self, event)
+    cr = self.contentsRect()
+    self.__lineNumberArea.setGeometry(
+      QtCore.QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height())
+      )
+
+  def lineNumberAreaWidth(self):
+    return 3 + self.fontMetrics().width('X') * self.__maxMarginLabelLen + 3
+
+  def updateLineNumberAreaWidth(self):
+    self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+  def lineNumberAreaPaintEvent(self, event):
+    lineNumberArea = self.__lineNumberArea
+    painter = QtGui.QPainter(lineNumberArea)
+    painter.fillRect(event.rect(), QtCore.Qt.lightGray)
+    block = self.firstVisibleBlock()
+    blockNumber = block.blockNumber()
+    top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+    bottom = top + int(self.blockBoundingRect(block).height())
+    while block.isValid() and top <= event.rect().bottom():
+      if block.isVisible() and bottom >= event.rect().top():
+        marginLabel = self.__marginLabels[blockNumber]
+        painter.setPen(QtCore.Qt.black)
+        painter.drawText(
+          0, top,
+          lineNumberArea.width() - 3, self.fontMetrics().height(),
+          QtCore.Qt.AlignRight, marginLabel
+          )
+      block = block.next()
+      top = bottom
+      bottom = top + int(self.blockBoundingRect(block).height())
+      blockNumber = blockNumber + 1
+    
+  def highlightLine(self, lineNumber):
+    document = self.document()
+    block = document.findBlockByLineNumber(lineNumber)
+    textCursor = self.textCursor()
+    textCursor.setPosition(block.position())
+    self.setTextCursor(textCursor)
+
+    selection = QtGui.QTextEdit.ExtraSelection()
+    lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
+    selection.format.setBackground(lineColor)
+    selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+    selection.cursor = textCursor
+    selection.cursor.clearSelection()
+    self.setExtraSelections([selection]);
+
+  def setContents(self, contents):
+    self.__marginLabels = []
+    self.__maxMarginLabelLen = 1
+    self.clear()
+    for contentItem in contents:
+      self.__marginLabels.append(contentItem[0])
+      marginLabelLen = len(contentItem[0])
+      if marginLabelLen > self.__maxMarginLabelLen:
+        self.__maxMarginLabelLen = marginLabelLen
+      self.appendPlainText(contentItem[1])
+    self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
 
@@ -185,33 +274,14 @@ class CodeWidget(QtGui.QPlainTextEdit):
     lineNumber = lineEntry.GetLine()
     self.updateDisplay(pathname, lineNumber)
 
-codeWidget = CodeWidget()
-codeWidget.setReadOnly(True)
+sourceCodeDisplayWidget = SourceCodeDisplayWidget()
+sourceCodeDisplayWidget.setReadOnly(True)
 
-class DisassemblyWidget(QtGui.QPlainTextEdit):
-  def __init__(self, parent=None):
-    QtGui.QPlainTextEdit.__init__(self, parent)
+class DisassemblyDisplayWidget(CodeDisplayWidget):
+  def __init__(self):
+    CodeDisplayWidget.__init__(self)
+
     self.__functionOrSymbol = None
-
-    self.setFont(font)
-    self.setReadOnly(True)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
-    self.setCenterOnScroll(True)
-    
-  def highlightLine(self, lineNumber):
-    document = self.document()
-    block = document.findBlockByLineNumber(lineNumber)
-    textCursor = self.textCursor()
-    textCursor.setPosition(block.position())
-    self.setTextCursor(textCursor)
-
-    selection = QtGui.QTextEdit.ExtraSelection()
-    lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
-    selection.format.setBackground(lineColor)
-    selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
-    selection.cursor = textCursor
-    selection.cursor.clearSelection()
-    self.setExtraSelections([selection]);
 
   def frame(self):
     return self.__frame
@@ -230,6 +300,7 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
     if newFunctionOrSymbol:
       self.clear()
     count = instructions.GetSize()
+    contents = []
     lineNumberToHighlight = None
     for i in range(0, count):
       instruction = instructions.GetInstructionAtIndex(i)
@@ -238,11 +309,24 @@ class DisassemblyWidget(QtGui.QPlainTextEdit):
       if loadAddress == pc:
         lineNumberToHighlight = i
       if newFunctionOrSymbol:
-        self.insertPlainText(str(instruction) + "\n")
+        mnemonic = instruction.GetMnemonic(target)
+        operands =  instruction.GetOperands(target)
+        comment =  instruction.GetComment(target)
+        desc = "%-8s %s" % (mnemonic, operands)
+        if comment:
+          if len(desc) < 32:
+            desc += ' ' * (32 - len(desc))
+          desc += "; %s" % comment
+        contents.append(["%#x" % loadAddress, desc])
+    if newFunctionOrSymbol:
+      self.setContents(contents)
+
     if lineNumberToHighlight != None:
       self.highlightLine(lineNumberToHighlight)
+    else:
+      self.setExtraSelections([])
 
-disassemblyWidget = DisassemblyWidget()
+disassemblyDisplayWidget = DisassemblyDisplayWidget()
 
 class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, value, includeType):
@@ -482,15 +566,15 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
 class StackWidget(QtGui.QTreeWidget):
   def __init__(
     self,
-    codeWidget,
-    disassemblyWidget,
+    sourceCodeDisplayWidget,
+    disassemblyDisplayWidget,
     localsWidget,
     registersWidget
     ):
     QtGui.QTreeWidget.__init__(self)
 
-    self.__codeWidget = codeWidget
-    self.__disassemblyWidget = disassemblyWidget
+    self.__sourceCodeDisplayWidget = sourceCodeDisplayWidget
+    self.__disassemblyDisplayWidget = disassemblyDisplayWidget
     self.__localsWidget = localsWidget
     self.__registersWidget = registersWidget
 
@@ -511,8 +595,8 @@ class StackWidget(QtGui.QTreeWidget):
         thread.SetSelectedFrame(frameIndex)
 
         frame = thread.GetFrameAtIndex(frameIndex)
-        self.__codeWidget.updateDisplayForLineEntry(frame.GetLineEntry())
-        self.__disassemblyWidget.setFrame(frame)
+        self.__sourceCodeDisplayWidget.updateDisplayForLineEntry(frame.GetLineEntry())
+        self.__disassemblyDisplayWidget.setFrame(frame)
       else:
         frame = None
       self.__localsWidget.setFrame(frame)
@@ -549,8 +633,8 @@ class StackWidget(QtGui.QTreeWidget):
     self.setEnabled(enabled)
 
 stackWidget = StackWidget(
-  codeWidget,
-  disassemblyWidget,
+  sourceCodeDisplayWidget,
+  disassemblyDisplayWidget,
   localsWidget,
   registersWidget
   )
@@ -689,7 +773,7 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
         filename = currentItem.text(0)
         directory = currentItem.text(1)
         pathname = os.path.join(directory, filename)
-        codeWidget.updateDisplay(pathname, 0)
+        sourceCodeDisplayWidget.updateDisplay(pathname, 0)
     self.currentItemChanged.connect(currentItemChanged)
     
     self.setFilter("")
@@ -821,20 +905,20 @@ threadsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.Q
 threadsWidget_dockWidget.setWindowTitle("Threads")
 threadsWidget_dockWidget.setWidget(threadsWidget)
 
-# codeWidget_dockWidget = QtGui.QDockWidget()
-# codeWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-# codeWidget_dockWidget.setWindowTitle("Source Code")
-# codeWidget_dockWidget.setWidget(codeWidget)
+# sourceCodeDisplayWidget_dockWidget = QtGui.QDockWidget()
+# sourceCodeDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+# sourceCodeDisplayWidget_dockWidget.setWindowTitle("Source Code")
+# sourceCodeDisplayWidget_dockWidget.setWidget(sourceCodeDisplayWidget)
 
 lldbWidget_dockWidget = QtGui.QDockWidget()
 lldbWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
 lldbWidget_dockWidget.setWindowTitle("LLDB")
 lldbWidget_dockWidget.setWidget(lldbWidget)
 
-disassemblyWidget_dockWidget = QtGui.QDockWidget()
-disassemblyWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-disassemblyWidget_dockWidget.setWindowTitle("Disassembly")
-disassemblyWidget_dockWidget.setWidget(disassemblyWidget)
+disassemblyDisplayWidget_dockWidget = QtGui.QDockWidget()
+disassemblyDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+disassemblyDisplayWidget_dockWidget.setWindowTitle("Disassembly")
+disassemblyDisplayWidget_dockWidget.setWidget(disassemblyDisplayWidget)
 
 localsWidget_dockWidget = QtGui.QDockWidget()
 localsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -910,13 +994,13 @@ stepOutAction.triggered.connect(stepOutCallback)
 stoppedActions.append(stepOutAction)
 
 mainWindow = MainWindow(executable)
-mainWindow.setCentralWidget(codeWidget)
+mainWindow.setCentralWidget(sourceCodeDisplayWidget)
 mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyDisplayWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
