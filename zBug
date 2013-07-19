@@ -649,9 +649,45 @@ class OutputWidget(QtGui.QTextEdit):
 
 outputWidget = OutputWidget()
 
+class SymbolSearchQueryWidget(QtGui.QLineEdit):
+  search = QtCore.Signal(basestring)
+
+  def __init__(self):
+    QtGui.QLineEdit.__init__(self)
+
+    self.setFont(font)
+
+    def returnPressed():
+      text = self.text()
+      self.selectAll()
+      self.search.emit(text)
+    self.returnPressed.connect(returnPressed)
+
+symbolSearchQueryWidget = SymbolSearchQueryWidget()
+symbolSearchQueryLayout = QtGui.QHBoxLayout()
+symbolSearchQueryLayout.addWidget(QtGui.QLabel("Search:"))
+symbolSearchQueryLayout.addWidget(symbolSearchQueryWidget)
+
+class SymbolSearchResultsWidget(QtGui.QTableWidget):
+  def __init__(self):
+    QtGui.QTableWidget.__init__(self)
+    
+  def search(self, text):
+    print text
+
+symbolSearchResultsWidget = SymbolSearchResultsWidget()
+symbolSearchQueryWidget.search.connect(symbolSearchResultsWidget.search)
+
+symbolSearchLayout = QtGui.QVBoxLayout()
+symbolSearchLayout.addLayout(symbolSearchQueryLayout)
+symbolSearchLayout.addWidget(symbolSearchResultsWidget)
+
+symbolSearchWidget = QtGui.QWidget()
+symbolSearchWidget.setLayout(symbolSearchLayout)
+
 class LLDBDisplay(QtGui.QTextEdit):
-  def __init__(self, parent=None):
-    QtGui.QTextEdit.__init__(self, parent)
+  def __init__(self):
+    QtGui.QTextEdit.__init__(self)
 
     self.setReadOnly(True)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -772,6 +808,11 @@ outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QD
 outputWidget_dockWidget.setWindowTitle("Output")
 outputWidget_dockWidget.setWidget(outputWidget)
 
+symbolSearchWidget_dockWidget = QtGui.QDockWidget()
+symbolSearchWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+symbolSearchWidget_dockWidget.setWindowTitle("Symbols")
+symbolSearchWidget_dockWidget.setWidget(symbolSearchWidget)
+
 class MainWindow(QtGui.QMainWindow):
   def __init__(self, executable):
     QtGui.QMainWindow.__init__(self)
@@ -833,6 +874,7 @@ mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyWidget_dockWidget)
+mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, symbolSearchWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
 mainWindow.show()
