@@ -1130,7 +1130,7 @@ timer.start(100)
 lldbDisplay.appendDebuggerOutput("Welcome to zBug version %s!\n" % app.applicationVersion())
 if len(arguments) > 0:
   lldbCommandWidget.executeCommand(
-    "settings set target.run-args -- %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
+    "settings set -- target.run-args %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
     )
 lldbCommandWidget.executeCommand(
   "process launch --stop-at-entry"
