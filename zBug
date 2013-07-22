@@ -772,6 +772,7 @@ class AppendingTextWidget(QtGui.QTextEdit):
     textCursor = self.textCursor()
     textCursor.movePosition(QtGui.QTextCursor.End)
     textCursor.insertText(text, charFormat)
+    self.setTextCursor(textCursor)
     self.ensureCursorVisible()
 
 class OutputWidget(AppendingTextWidget):
