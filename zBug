@@ -47,6 +47,12 @@ debugger.SetAsync(True)
 
 # Search PATH for executable
 def resolveExecutable(executable):
+  try:
+    if stat.S_ISREG(os.stat(executable).st_mode):
+      return executable
+  except IOError as e:
+    pass
+  
   pathDirs = os.environ['PATH'].split(":")
   for pathDir in pathDirs:
     pathedExecutable = os.path.join(pathDir, executable)
@@ -55,6 +61,9 @@ def resolveExecutable(executable):
         return pathedExecutable
     except IOError as e:
       pass
+  
+  print "Unable to find executable '%s'" % executable
+  sys.exit(1)
 executable = resolveExecutable(executable)
 target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT)
 
