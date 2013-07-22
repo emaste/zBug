@@ -50,7 +50,7 @@ def resolveExecutable(executable):
   try:
     if stat.S_ISREG(os.stat(executable).st_mode):
       return executable
-  except IOError as e:
+  except:
     pass
   
   pathDirs = os.environ['PATH'].split(":")
@@ -59,7 +59,7 @@ def resolveExecutable(executable):
     try:
       if stat.S_ISREG(os.stat(pathedExecutable).st_mode):
         return pathedExecutable
-    except IOError as e:
+    except:
       pass
   
   print "Unable to find executable '%s'" % executable
