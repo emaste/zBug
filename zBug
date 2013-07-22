@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, os, platform, commands, stat
+import sys, os, platform, commands, stat, signal
 from PySide import QtCore, QtGui
 
 if len(sys.argv) <= 1:
@@ -980,7 +980,12 @@ sourcesWidget_dockWidget.setWidget(sourcesWidget)
 class MainWindow(QtGui.QMainWindow):
   def __init__(self, executable):
     QtGui.QMainWindow.__init__(self)
-
+    
+    def handler(signum, frame):
+      signal.signal(signum, signal.SIG_DFL)
+      self.close()
+    signal.signal(signal.SIGINT, handler)
+    
     settings.beginGroup("MainWindow")
     self.resize(settings.value("size", QtCore.QSize(800, 600)))
     self.move(settings.value("pos", QtCore.QPoint(200, 200)))
