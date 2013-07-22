@@ -65,7 +65,6 @@ def resolveExecutable(executable):
   print "Unable to find executable '%s'" % executable
   sys.exit(1)
 executable = resolveExecutable(executable)
-target = debugger.CreateTargetWithFileAndArch(executable, lldb.LLDB_ARCH_DEFAULT)
 
 app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
@@ -267,7 +266,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
   def updateDisplay(self, pathname, lineNumber):
     newPathname = pathname != self.__pathname
     self.__pathname = pathname
-
+    
     if len(pathname) > 0:
       if newPathname:
         try:
@@ -310,7 +309,11 @@ class DisassemblyDisplayWidget(CodeDisplayWidget):
     self.__frame = frame
     pc = frame.GetPC()
     pcAddress = frame.GetPCAddress()
-
+    
+    thread = frame.GetThread()
+    process = thread.GetProcess()
+    target = process.GetTarget()
+    
     function = frame.GetFunction()
     if function:
       instructions = function.GetInstructions(target)
@@ -614,50 +617,57 @@ class StackWidget(QtGui.QTreeWidget):
       "PC",
       "Location"
     ])
-
+    
     def currentItemChanged(newItem, oldItem):
+      frame = None
       currentItem = self.currentItem()
       if currentItem:
         frameIndex = self.indexOfTopLevelItem(currentItem)
-        thread = self.__process.GetSelectedThread()
-        thread.SetSelectedFrame(frameIndex)
-
-        frame = thread.GetFrameAtIndex(frameIndex)
-        self.__sourceCodeDisplayWidget.updateDisplayForLineEntry(frame.GetLineEntry())
-        self.__disassemblyDisplayWidget.setFrame(frame)
-      else:
-        frame = None
+        target = debugger.GetSelectedTarget()
+        if target and target.IsValid():
+          process = target.GetProcess()
+          if process and process.IsValid():
+            thread = process.GetSelectedThread()
+            thread.SetSelectedFrame(frameIndex)
+            
+            frame = thread.GetFrameAtIndex(frameIndex)
+            self.__sourceCodeDisplayWidget.updateDisplayForLineEntry(
+              frame.GetLineEntry()
+              )
+            self.__disassemblyDisplayWidget.setFrame(frame)
       self.__localsWidget.setFrame(frame)
       self.__registersWidget.setFrame(frame)
     self.currentItemChanged.connect(currentItemChanged)
 
-  def updateDisplay(self, process):
+  def updateDisplay(self):
     self.setCurrentItem(None)
     enabled = False
-    self.__process = None
+    
+    target = debugger.GetSelectedTarget()
+    if target and target.IsValid():
+      process = target.GetProcess()
+      if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
+        thread = process.GetSelectedThread()
+        if thread and thread.IsValid():
+          count = thread.GetNumFrames()
+          if count > 0:
+            self.__process = process
 
-    if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
-      thread = process.GetSelectedThread()
-      if thread and thread.IsValid():
-        count = thread.GetNumFrames()
-        if count > 0:
-          self.__process = process
+            selectedFrame = thread.GetSelectedFrame()
+            selectedFrameID = selectedFrame.GetFrameID()
 
-          selectedFrame = thread.GetSelectedFrame()
-          selectedFrameID = selectedFrame.GetFrameID()
+            self.clear()
+            for i in range(0, count):
+              frame = thread.GetFrameAtIndex(i)
+              stackWidgetItem = StackWidgetItem(frame)
+              self.addTopLevelItem(stackWidgetItem)
+              if frame.GetFrameID() == selectedFrameID:
+                self.setCurrentItem(stackWidgetItem)
 
-          self.clear()
-          for i in range(0, count):
-            frame = thread.GetFrameAtIndex(i)
-            stackWidgetItem = StackWidgetItem(frame)
-            self.addTopLevelItem(stackWidgetItem)
-            if frame.GetFrameID() == selectedFrameID:
-              self.setCurrentItem(stackWidgetItem)
+            self.resizeColumnToContents(0)
+            self.resizeColumnToContents(1)
 
-          self.resizeColumnToContents(0)
-          self.resizeColumnToContents(1)
-
-          enabled = True
+            enabled = True
     self.setEnabled(enabled)
 
 stackWidget = StackWidget(
@@ -708,37 +718,42 @@ class ThreadsWidget(QtGui.QTreeWidget):
       currentItem = self.currentItem()
       if currentItem:
         threadIndex = self.indexOfTopLevelItem(currentItem)
-        thread = self.__process.GetThreadAtIndex(int(threadIndex))
-        self.__process.SetSelectedThread(thread)
-      else:
-        thread = None
-      self.__stackWidget.updateDisplay(self.__process)
+        target = debugger.GetSelectedTarget()
+        if target and target.IsValid():
+          process = target.GetProcess()
+          if process and process.IsValid and process.GetState() == lldb.eStateStopped:
+            thread = process.GetThreadAtIndex(int(threadIndex))
+            process.SetSelectedThread(thread)
+            self.__stackWidget.updateDisplay()
     self.currentItemChanged.connect(currentItemChanged)
 
-  def updateDisplay(self, process):
+  def updateDisplay(self):
     self.setCurrentItem(None)
     self.__process = None
     enabled = False
-
-    if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
-      self.__process = process
-
-      count = process.GetNumThreads()
-      selectedThread = process.GetSelectedThread()
-      selectedThreadID = selectedThread.GetThreadID()
-
-      self.clear()
-      for i in range(0, count):
-        thread = process.GetThreadAtIndex(i)
-        threadWidgetItem = ThreadsWidgetItem(thread)
-        self.addTopLevelItem(threadWidgetItem)
-        if thread.GetThreadID() == selectedThreadID:
-          self.setCurrentItem(threadWidgetItem)
-
-      self.resizeColumnToContents(0)
-      self.resizeColumnToContents(1)
-
-      enabled = True
+    
+    target = debugger.GetSelectedTarget()
+    if target and target.IsValid():
+      process = target.GetProcess()
+      if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
+        self.__process = process
+        
+        count = process.GetNumThreads()
+        selectedThread = process.GetSelectedThread()
+        selectedThreadID = selectedThread.GetThreadID()
+        
+        self.clear()
+        for i in range(0, count):
+          thread = process.GetThreadAtIndex(i)
+          threadWidgetItem = ThreadsWidgetItem(thread)
+          self.addTopLevelItem(threadWidgetItem)
+          if thread.GetThreadID() == selectedThreadID:
+            self.setCurrentItem(threadWidgetItem)
+        
+        self.resizeColumnToContents(0)
+        self.resizeColumnToContents(1)
+        
+        enabled = True
     self.setEnabled(enabled)
 
 threadsWidget = ThreadsWidget(stackWidget)
@@ -819,9 +834,14 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
     self.updateDisplay()
 
   def updateDisplay(self):
-    # self.setSortingEnabled(False)
+    count = 0
+    target = debugger.GetSelectedTarget()
+    if target and target.IsValid():
+      process = target.GetProcess()
+      if process and process.IsValid():
+        count = target.GetNumModules()
+    
     self.clear()
-    count = target.GetNumModules()
     for i in range(0, count):
       module = target.GetModuleAtIndex(i)
       compileUnitCount = module.GetNumCompileUnits()
@@ -835,7 +855,6 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
           tableWidgetItem.setText(0, filename)
           tableWidgetItem.setText(1, directory)
           self.addTopLevelItem(tableWidgetItem)
-    # self.setSortingEnabled(True)
     self.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
 sourcesResultsWidget = SourcesResultsWidget()
@@ -894,7 +913,7 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     else:
       self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
     self.__lastCommand = command
-    stackWidget.updateDisplay(target.GetProcess())
+    stackWidget.updateDisplay()
 
 lldbCommandWidget = LLDBCommandWidget(
   debugger.GetCommandInterpreter(),
@@ -1031,23 +1050,28 @@ def handleDebuggerEvents():
   eventCount = 0
   while debugger.GetListener().GetNextEvent(event):
     eventCount += 1
+    
+    stream = lldb.SBStream()
+    event.GetDescription(stream)
+    print stream.GetData()
+    
     if event.GetBroadcaster().GetName() == "lldb.process":
+      target = debugger.GetSelectedTarget()
       process = target.GetProcess()
-
-      if process.IsValid():
-        process_stdout = process.GetSTDOUT(1024)
-        if process_stdout:
+      
+      process_stdout = process.GetSTDOUT(1024)
+      if process_stdout:
+        outputWidget.appendStdout(process_stdout)
+        while process_stdout:
+          process_stdout = process.GetSTDOUT(1024)
           outputWidget.appendStdout(process_stdout)
-          while process_stdout:
-            process_stdout = process.GetSTDOUT(1024)
-            outputWidget.appendStdout(process_stdout)
-        process_stderr = process.GetSTDERR(1024)
-        if process_stderr:
+      process_stderr = process.GetSTDERR(1024)
+      if process_stderr:
+        outputWidget.appendStderr(process_stderr)
+        while process_stderr:
+          process_stderr = process.GetSTDERR(1024)
           outputWidget.appendStderr(process_stderr)
-          while process_stderr:
-            process_stderr = process.GetSTDERR(1024)
-            outputWidget.appendStderr(process_stderr)
-
+      
       state = lldb.SBProcess.GetStateFromEvent(event)
       if state == lldb.eStateInvalid:
         # Not a state event
@@ -1129,7 +1153,7 @@ def handleDebuggerEvents():
     else:
       print 'Non-process event = %s' % (event)
   if eventCount > 0:
-    threadsWidget.updateDisplay(target.GetProcess())
+    threadsWidget.updateDisplay()
     sourcesResultsWidget.updateDisplay()
 
 timer = QtCore.QTimer()
@@ -1137,13 +1161,13 @@ timer.timeout.connect(handleDebuggerEvents)
 timer.start(100)
 
 lldbDisplay.appendDebuggerOutput("Welcome to zBug version %s!\n" % app.applicationVersion())
+lldbCommandWidget.executeCommand(
+  "target create \"%s\"" % executable
+  )
 if len(arguments) > 0:
   lldbCommandWidget.executeCommand(
     "settings set -- target.run-args %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
     )
-lldbCommandWidget.executeCommand(
-  "process launch --stop-at-entry"
-  )
 lldbCommandWidget.setFocus()
 
 sys.exit(app.exec_())
