@@ -997,40 +997,64 @@ class MainWindow(QtGui.QMainWindow):
     settings.setValue("isMaximized", self.isMaximized())
     settings.endGroup()
 
-runningActions = []
-stoppedActions = []
-
 toolBar = QtGui.QToolBar()
-interruptAction = toolBar.addAction("Interrupt")
+actions = []
 
+startAction = toolBar.addAction("Start")
+def startCallback():
+  lldbCommandWidget.executeCommand("process launch")
+startAction.triggered.connect(startCallback)
+actions.append(startAction)
+
+interruptAction = toolBar.addAction("Interrupt")
 def interruptCallback():
   lldbCommandWidget.executeCommand("process interrupt")
 interruptAction.triggered.connect(interruptCallback)
-runningActions.append(interruptAction)
+actions.append(interruptAction)
+
+toolBar.addSeparator()
 
 continueAction = toolBar.addAction("Continue")
 def continueCallback():
   lldbCommandWidget.executeCommand("process continue")
 continueAction.triggered.connect(continueCallback)
-stoppedActions.append(continueAction)
+actions.append(continueAction)
 
 stepInAction = toolBar.addAction("Step In")
 def stepInCallback():
   lldbCommandWidget.executeCommand("thread step-in")
 stepInAction.triggered.connect(stepInCallback)
-stoppedActions.append(stepInAction)
+actions.append(stepInAction)
 
 stepOverAction = toolBar.addAction("Step Over")
 def stepOverCallback():
   lldbCommandWidget.executeCommand("thread step-over")
 stepOverAction.triggered.connect(stepOverCallback)
-stoppedActions.append(stepOverAction)
+actions.append(stepOverAction)
 
 stepOutAction = toolBar.addAction("Step Out")
 def stepOutCallback():
   lldbCommandWidget.executeCommand("thread step-out")
 stepOutAction.triggered.connect(stepOutCallback)
-stoppedActions.append(stepOutAction)
+actions.append(stepOutAction)
+
+def updateToolbarItems():
+  for action in actions:
+    action.setEnabled(False)
+  
+  target = debugger.GetSelectedTarget()
+  if target and target.IsValid():
+    process = target.GetProcess()
+    if process and process.IsValid() and process.GetState() != lldb.eStateExited:
+      if process.GetState() == lldb.eStateStopped:
+        continueAction.setEnabled(True)
+        stepInAction.setEnabled(True)
+        stepOverAction.setEnabled(True)
+        stepOutAction.setEnabled(True)
+      else:
+        interruptAction.setEnabled(True)
+    else:
+      startAction.setEnabled(True)
 
 mainWindow = MainWindow(executable)
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
@@ -1139,22 +1163,12 @@ def handleDebuggerEvents():
           pass
         elif state == lldb.eStateLaunching:
           pass
-
-      if process.GetState() == lldb.eStateStopped:
-        for action in runningActions:
-          action.setEnabled(False)
-        for action in stoppedActions:
-          action.setEnabled(True)
-      else:
-        for action in runningActions:
-          action.setEnabled(True)
-        for action in stoppedActions:
-          action.setEnabled(False)
     else:
       print 'Non-process event = %s' % (event)
   if eventCount > 0:
     threadsWidget.updateDisplay()
     sourcesResultsWidget.updateDisplay()
+    updateToolbarItems()
 
 timer = QtCore.QTimer()
 timer.timeout.connect(handleDebuggerEvents)
@@ -1169,6 +1183,8 @@ if len(arguments) > 0:
     "settings set -- target.run-args %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
     )
 lldbCommandWidget.setFocus()
+
+updateToolbarItems()
 
 sys.exit(app.exec_())
 
