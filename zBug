@@ -113,8 +113,6 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
         self.updateLineNumberAreaWidth()
     self.updateRequest.connect(updateLineNumberArea)
 
-    self.updateLineNumberAreaWidth()
-
   def resizeEvent(self, event):
     QtGui.QWidget.resizeEvent(self, event)
     cr = self.contentsRect()
@@ -182,33 +180,35 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
 class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
-
+    
     self.__pathname = None
-
+    
     self.setReadOnly(True)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setFont(font)
     self.setCenterOnScroll(True)
-
+    
     lineNumberArea = LineNumberArea(self)
     self.__lineNumberArea = lineNumberArea
-
+    
     def updateLineNumberAreaWidth(newBlockCount):
       self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
     self.blockCountChanged.connect(updateLineNumberAreaWidth)
-
+    
     def updateLineNumberArea(rect, dy):
       if dy != 0:
         lineNumberArea.scroll(0, dy)
       else:
         lineNumberArea.update(0, rect.y(), lineNumberArea.width(), rect.height())
-
+      
       if rect.contains(self.viewport().rect()):
         updateLineNumberAreaWidth(0)
     self.updateRequest.connect(updateLineNumberArea)
-
+    
     updateLineNumberAreaWidth(0)
-
+    
+    self.updateDisplay("", 0)
+  
   def resizeEvent(self, event):
     QtGui.QWidget.resizeEvent(self, event)
     cr = self.contentsRect()
@@ -280,7 +280,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     else:
       self.setPlainText("No source code for this location")
       lineNumber = 0
-
+    
     if lineNumber >= 1:
       self.highlightLine(lineNumber - 1)
     else:
@@ -296,7 +296,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     self.updateDisplay(pathname, lineNumber)
 
 sourceCodeDisplayWidget = SourceCodeDisplayWidget()
-sourceCodeDisplayWidget.setReadOnly(True)
+sourceCodeDisplayWidget.setMinimumSize(640, 480)
 
 class DisassemblyDisplayWidget(CodeDisplayWidget):
   def __init__(self):
@@ -1075,9 +1075,9 @@ def handleDebuggerEvents():
   while debugger.GetListener().GetNextEvent(event):
     eventCount += 1
     
-    stream = lldb.SBStream()
-    event.GetDescription(stream)
-    print stream.GetData()
+    # stream = lldb.SBStream()
+    # event.GetDescription(stream)
+    # print stream.GetData()
     
     if event.GetBroadcaster().GetName() == "lldb.process":
       target = debugger.GetSelectedTarget()
