@@ -885,13 +885,13 @@ lldbDisplay = LLDBDisplay()
 class LLDBCommandWidget(QtGui.QLineEdit):
   def __init__(self, commandInterpreter, lldbDisplay):
     QtGui.QLineEdit.__init__(self)
-
+    
     self.__commandInterpreter = commandInterpreter
     self.__lldbDisplay = lldbDisplay
     self.__lastCommand = None
-
+    
     self.setFont(font)
-
+    
     def returnPressedCallback():
       command = str(self.text())
       self.clear()
@@ -899,7 +899,19 @@ class LLDBCommandWidget(QtGui.QLineEdit):
         command = self.__lastCommand
       self.executeCommand(command)
     self.returnPressed.connect(returnPressedCallback)
-
+  
+  def event(self, event):
+    if event.type() == QtCore.QEvent.Type.KeyPress:
+      if event.key() == QtCore.Qt.Key_Tab:
+        text = str(self.text())
+        stringList = lldb.SBStringList()
+        self.__commandInterpreter.HandleCompletion(
+          text, len(text), 1, -1, stringList
+          )
+        self.setText(text + stringList.GetStringAtIndex(0))
+        return True
+    return QtGui.QLineEdit.event(self, event)
+  
   def executeCommand(self, command):
     lldbDisplay.appendCommand(command)
     return_obj = lldb.SBCommandReturnObject()
