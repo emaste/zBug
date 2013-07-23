@@ -608,7 +608,7 @@ class StackWidget(QtGui.QTreeWidget):
     self.__disassemblyDisplayWidget = disassemblyDisplayWidget
     self.__localsWidget = localsWidget
     self.__registersWidget = registersWidget
-
+    
     self.setEnabled(False)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(0)
@@ -617,28 +617,27 @@ class StackWidget(QtGui.QTreeWidget):
       "PC",
       "Location"
     ])
-    
-    def currentItemChanged(newItem, oldItem):
-      frame = None
-      currentItem = self.currentItem()
-      if currentItem:
-        frameIndex = self.indexOfTopLevelItem(currentItem)
-        target = debugger.GetSelectedTarget()
-        if target and target.IsValid():
-          process = target.GetProcess()
-          if process and process.IsValid():
-            thread = process.GetSelectedThread()
-            thread.SetSelectedFrame(frameIndex)
-            
-            frame = thread.GetFrameAtIndex(frameIndex)
-            self.__sourceCodeDisplayWidget.updateDisplayForLineEntry(
-              frame.GetLineEntry()
-              )
-            self.__disassemblyDisplayWidget.setFrame(frame)
-      self.__localsWidget.setFrame(frame)
-      self.__registersWidget.setFrame(frame)
-    self.currentItemChanged.connect(currentItemChanged)
-
+  
+  def syncToSelectedItem(self):
+    frame = None
+    currentItem = self.currentItem()
+    if currentItem:
+      frameIndex = self.indexOfTopLevelItem(currentItem)
+      target = debugger.GetSelectedTarget()
+      if target and target.IsValid():
+        process = target.GetProcess()
+        if process and process.IsValid():
+          thread = process.GetSelectedThread()
+          thread.SetSelectedFrame(frameIndex)
+          
+          frame = thread.GetFrameAtIndex(frameIndex)
+          self.__sourceCodeDisplayWidget.updateDisplayForLineEntry(
+            frame.GetLineEntry()
+            )
+          self.__disassemblyDisplayWidget.setFrame(frame)
+    self.__localsWidget.setFrame(frame)
+    self.__registersWidget.setFrame(frame)
+  
   def updateDisplay(self):
     self.setCurrentItem(None)
     enabled = False
@@ -652,21 +651,31 @@ class StackWidget(QtGui.QTreeWidget):
           count = thread.GetNumFrames()
           if count > 0:
             self.__process = process
-
+            
             selectedFrame = thread.GetSelectedFrame()
             selectedFrameID = selectedFrame.GetFrameID()
-
+            
+            try:
+              self.currentItemChanged.disconnect()
+            except:
+              pass
             self.clear()
+            
             for i in range(0, count):
               frame = thread.GetFrameAtIndex(i)
               stackWidgetItem = StackWidgetItem(frame)
               self.addTopLevelItem(stackWidgetItem)
               if frame.GetFrameID() == selectedFrameID:
                 self.setCurrentItem(stackWidgetItem)
-
+            
             self.resizeColumnToContents(0)
             self.resizeColumnToContents(1)
-
+            
+            self.syncToSelectedItem()
+            def currentItemChanged(newItem, oldItem):
+              self.syncToSelectedItem()
+            self.currentItemChanged.connect(currentItemChanged)
+            
             enabled = True
     self.setEnabled(enabled)
 
