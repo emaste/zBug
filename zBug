@@ -888,28 +888,46 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     
     self.__commandInterpreter = commandInterpreter
     self.__lldbDisplay = lldbDisplay
-    self.__lastCommand = None
+    self.__history = []
+    self.__historyPos = 0
     
     self.setFont(font)
     
     def returnPressedCallback():
       command = str(self.text())
       self.clear()
-      if len(command) == 0 and self.__lastCommand != None:
-        command = self.__lastCommand
+      if len(command) == 0 and len(self.__history) > 0:
+        command = self.__history[len(self.__history)-1]
       self.executeCommand(command)
     self.returnPressed.connect(returnPressedCallback)
   
   def event(self, event):
     if event.type() == QtCore.QEvent.Type.KeyPress:
-      if event.key() == QtCore.Qt.Key_Tab:
+      key = event.key()
+      if key == QtCore.Qt.Key_Tab:
         text = str(self.text())
         stringList = lldb.SBStringList()
         self.__commandInterpreter.HandleCompletion(
           text, len(text), 1, -1, stringList
           )
-        self.setText(text + stringList.GetStringAtIndex(0))
+        if stringList.GetSize() > 0:
+          self.setText(text + stringList.GetStringAtIndex(0))
         return True
+      elif key == QtCore.Qt.Key_Up:
+        if self.__historyPos > 0:
+          self.__historyPos -= 1
+          self.setText(self.__history[self.__historyPos])
+          self.selectAll()
+          return True
+      elif key == QtCore.Qt.Key_Down:
+        if self.__historyPos < len(self.__history):
+          self.__historyPos += 1
+          if self.__historyPos == len(self.__history):
+            self.setText("")
+          else:
+            self.setText(self.__history[self.__historyPos])
+          self.selectAll()
+          return True
     return QtGui.QLineEdit.event(self, event)
   
   def executeCommand(self, command):
@@ -920,7 +938,8 @@ class LLDBCommandWidget(QtGui.QLineEdit):
       self.__lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
     else:
       self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
-    self.__lastCommand = command
+    self.__history.append(command)
+    self.__historyPos = len(self.__history)
     stackWidget.updateDisplay()
 
 lldbCommandWidget = LLDBCommandWidget(
