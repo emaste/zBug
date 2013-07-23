@@ -93,7 +93,6 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
     QtGui.QPlainTextEdit.__init__(self)
 
     self.setReadOnly(True)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setFont(font)
     self.setCenterOnScroll(True)
 
@@ -184,7 +183,6 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     self.__pathname = None
     
     self.setReadOnly(True)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setFont(font)
     self.setCenterOnScroll(True)
     
@@ -445,7 +443,6 @@ class LocalsWidget(QtGui.QTreeWidget):
     self.__existingItems = {}
 
     self.setEnabled(False)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(12)
     self.setHeaderLabels([
       "Name",
@@ -520,7 +517,6 @@ class RegistersWidget(QtGui.QTreeWidget):
     self.__existingItems = {}
 
     self.setEnabled(False)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(12)
     self.setHeaderLabels([
       "Name",
@@ -763,7 +759,6 @@ class AppendingTextWidget(QtGui.QTextEdit):
     QtGui.QTextEdit.__init__(self)
 
     self.setReadOnly(True)
-    self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setFont(font)
 
   def append(self, text, color):
