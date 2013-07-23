@@ -1,7 +1,7 @@
 zBug
 ====
 
-zBug (pronounced *zee-bug*) is a front end to the LLDB debugger (see http://lldb.llvm.org).
+zBug (pronounced *zee-BUG*) is a front end to the LLDB debugger (see http://lldb.llvm.org).
 
 License
 -------
