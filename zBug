@@ -390,10 +390,14 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def update(self):
     value = self.__value
     includeType = self.__includeType
-
+    
     self.setText(0, value.GetName())
-
-    self.setText(1, value.GetValue())
+    
+    dataDesc = value.GetValue()
+    summary = value.GetSummary()
+    if summary:
+      dataDesc += " " + summary
+    self.setText(1, dataDesc)
     if value.GetValueDidChange():
       self.setBackground(1, self.__dynamicColor)
     else:
