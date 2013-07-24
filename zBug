@@ -358,17 +358,20 @@ class DisassemblyDisplayWidget(CodeDisplayWidget):
 disassemblyDisplayWidget = DisassemblyDisplayWidget()
 
 class ValueWidgetItem(QtGui.QTreeWidgetItem):
-  def __init__(self, includeType):
+  def __init__(self, includeExtras):
     QtGui.QTreeWidgetItem.__init__(self)
     
     self.__value = None
     self.__expanded = False
     self.__childItems = {}
-    self.__includeType = includeType
+    self.__includeExtras = includeExtras
     
+    self.setFlags(
+      QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEditable
+      )
     self.setFont(0, font)
     self.setFont(1, font)
-    if includeType:
+    if includeExtras:
       self.setFont(2, font)
     
     self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
@@ -388,27 +391,31 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
         child = self.takeChild(0)
         child.setValue(None)
   
+  def hasChanged(self):
+    error = lldb.SBError()
+    self.__value.SetValueFromCString(str(self.text(1)), error)
+    self.refresh()
+  
   def refresh(self):
     value = self.__value
-    includeType = self.__includeType
+    includeExtras = self.__includeExtras
     
     self.setText(0, value.GetName())
     
-    valueParts = []
-    valueValue = value.GetValue()
-    if valueValue:
-      valueParts.append(valueValue)
-    valueSummary = value.GetSummary()
-    if valueSummary:
-      valueParts.append(valueSummary)
-    self.setText(1, " ".join(valueParts))
+    self.setText(1, value.GetValue())
     if value.GetValueDidChange():
       self.setBackground(1, self.__dynamicColor)
     else:
       self.setBackground(1, self.background(0))
     
-    if includeType:
-      self.setText(2, value.GetTypeName())
+    if includeExtras:
+      self.setText(2, value.GetSummary())
+      if value.GetValueDidChange():
+        self.setBackground(2, self.__dynamicColor)
+      else:
+        self.setBackground(2, self.background(0))
+      
+      self.setText(3, value.GetTypeName())
     
     childCount = value.GetNumChildren()
     if childCount > 0:
@@ -427,7 +434,7 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
         if childValueName in self.__childItems:
           childValueWidgetItem = self.__childItems[childValueName]
         else:
-          childValueWidgetItem = ValueWidgetItem(self.__includeType)
+          childValueWidgetItem = ValueWidgetItem(self.__includeExtras)
           self.__childItems[childValueName] = childValueWidgetItem
         childValueWidgetItem.setValue(childValue)
         self.addChild(childValueWidgetItem)
@@ -445,6 +452,7 @@ class LocalsWidget(QtGui.QTreeWidget):
     self.setHeaderLabels([
       "Name",
       "Value",
+      "Details",
       "Type"
     ])
     
@@ -456,9 +464,19 @@ class LocalsWidget(QtGui.QTreeWidget):
     def itemExpanded(item):
       item.wasExpanded()
     self.itemExpanded.connect(itemExpanded)
+    
     def itemCollapsed(item):
       item.wasCollapsed()
     self.itemCollapsed.connect(itemCollapsed)
+    
+    def itemWasDoubleClicked(item, column):
+      if column == 1:
+        self.editItem(item, column)
+    self.itemDoubleClicked.connect(itemWasDoubleClicked)
+    
+    def itemHasChanged(item):
+      item.hasChanged()
+    self.itemChanged.connect(itemHasChanged)
   
   def hideEvent(self, event):
     settings.beginGroup("LocalsWidget")
@@ -551,7 +569,7 @@ class RegistersWidget(QtGui.QTreeWidget):
         if valueName in self.__topLevelItems:
           valueWidgetItem = self.__topLevelItems[valueName]
         else:
-          valueWidgetItem = ValueWidgetItem(includeType=False)
+          valueWidgetItem = ValueWidgetItem(includeExtras=False)
           self.__topLevelItems[valueName] = valueWidgetItem
         valueWidgetItem.setValue(value)
         self.addTopLevelItem(valueWidgetItem)
