@@ -393,11 +393,14 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     
     self.setText(0, value.GetName())
     
-    dataDesc = value.GetValue()
-    summary = value.GetSummary()
-    if summary:
-      dataDesc += " " + summary
-    self.setText(1, dataDesc)
+    valueParts = []
+    valueValue = value.GetValue()
+    if valueValue:
+      valueParts.append(valueValue)
+    valueSummary = value.GetSummary()
+    if valueSummary:
+      valueParts.append(valueSummary)
+    self.setText(1, " ".join(valueParts))
     if value.GetValueDidChange():
       self.setBackground(1, self.__dynamicColor)
     else:
