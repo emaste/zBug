@@ -405,15 +405,15 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
       self.setBackground(1, self.__dynamicColor)
     else:
       self.setBackground(1, self.background(0))
-
+    
     if includeType:
       self.setText(2, value.GetTypeName())
-
+    
     if value.GetNumChildren() > 0:
       self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.ShowIndicator)
     else:
       self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.DontShowIndicator)
-
+    
     self.takeChildren()
     if self.__expanded:
       count = value.GetNumChildren()
@@ -429,12 +429,12 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
         childValueWidgetItem.update()
     else:
       self.__existingChildren = {}
-
+  
   def saveExpansionState(self):
     self.__wasExpanded = self.treeWidget().isItemExpanded(self)
     for i in range(0, self.childCount()):
       self.child(i).saveExpansionState()
-
+  
   def restoreExpansionState(self):
     for i in range(0, self.childCount()):
       self.child(i).restoreExpansionState()
@@ -446,9 +446,9 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
 class LocalsWidget(QtGui.QTreeWidget):
   def __init__(self):
     QtGui.QTreeWidget.__init__(self)
-
+    
     self.__existingItems = {}
-
+    
     self.setEnabled(False)
     self.setIndentation(12)
     self.setHeaderLabels([
@@ -456,26 +456,26 @@ class LocalsWidget(QtGui.QTreeWidget):
       "Value",
       "Type"
     ])
-
+    
     settings.beginGroup("LocalsWidget")
     self.setColumnWidth(0, int(settings.value("firstColumnWidth", 120)))
     self.setColumnWidth(1, int(settings.value("secondColumnWidth", 200)))
     settings.endGroup()
-
+    
     def itemExpanded(item):
       item.expanded()
     self.itemExpanded.connect(itemExpanded)
     def itemCollapsed(item):
       item.collapsed()
     self.itemCollapsed.connect(itemCollapsed)
-
+  
   def hideEvent(self, event):
     settings.beginGroup("LocalsWidget")
     settings.setValue("firstColumnWidth", self.columnWidth(0))
     settings.setValue("secondColumnWidth", self.columnWidth(1))
     settings.endGroup()
     QtGui.QTreeWidget.hideEvent(self, event)
-
+  
   def setFrame(self, frame):
     enabled = False
     if frame and frame.IsValid():
@@ -1235,5 +1235,3 @@ lldbCommandWidget.setFocus()
 updateToolbarItems()
 
 sys.exit(app.exec_())
-
-
