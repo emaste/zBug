@@ -1,7 +1,10 @@
 #!/usr/bin/python
 
 import sys, os, platform, commands, stat, signal, optparse
+import json, select, socket, time
 from PySide import QtCore, QtGui
+
+simplified = True
 
 # must use optparse over argparse to support python 2.6
 parser = optparse.OptionParser(usage="Usage: zBug [options] [<executable> [<arg> ...]]")
@@ -63,6 +66,8 @@ settings = QtCore.QSettings()
 font = QtGui.QFont()
 font.setPointSize(12)
 font.setFamily("Courier")
+
+fabricSourceCode = {}
 
 class LineNumberArea(QtGui.QWidget):
   def __init__(self, sourceCodeDisplayWidget):
@@ -254,14 +259,25 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
 
     if len(pathname) > 0:
       if newPathname:
-        try:
-          f = open(pathname, 'r')
-          contents = f.read()
-          f.close()
-        except IOError as e:
-          contents = "Unable to read file:\n  %s\n" % str(e)
-          lineNumber = 0
+        contents = None
+        if options.fabric:
+          if pathname.find("(internal)") != -1:
+            contents = "Internal KL function, no source code available."
+          elif fabricSourceCode.has_key(pathname):
+            contents = fabricSourceCode[pathname]
+          elif fabricSourceCode.has_key(os.path.basename(pathname)):
+            contents = fabricSourceCode[os.path.basename(pathname)]
+
+        if contents is None:
+          try:
+            f = open(pathname, 'r')
+            contents = f.read()
+            f.close()
+          except IOError as e:
+            contents = "Unable to read file:\n  %s\n" % str(e)
+            lineNumber = 0
         self.setPlainText(contents)
+        self.parent().setWindowTitle(os.path.basename(pathname))
     else:
       self.setPlainText("No source code for this location")
       lineNumber = 0
@@ -814,17 +830,26 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
     QtGui.QTreeWidget.__init__(self)
 
     self.setIndentation(0)
-    self.setHeaderLabels([
-      "Filename",
-      "Directory"
-      ])
+    if simplified:
+      self.setHeaderLabels([
+        "Filename",
+        ])
+    else:
+      self.setHeaderLabels([
+        "Filename",
+        "Directory"
+        ])
 
     def currentItemChanged(newItem, oldItem):
       currentItem = self.currentItem()
       if currentItem:
         filename = currentItem.text(0)
-        directory = currentItem.text(1)
-        pathname = os.path.join(directory, filename)
+        pathname = filename
+        if simplified:
+          pathname = filename
+        else:
+          directory = currentItem.text(1)
+          pathname = os.path.join(directory, filename)
         sourceCodeDisplayWidget.updateDisplay(pathname, 0)
     self.currentItemChanged.connect(currentItemChanged)
 
@@ -843,19 +868,30 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
         count = target.GetNumModules()
 
     self.clear()
-    for i in range(0, count):
-      module = target.GetModuleAtIndex(i)
-      compileUnitCount = module.GetNumCompileUnits()
-      for j in range(0, compileUnitCount):
-        compileUnit = module.GetCompileUnitAtIndex(j)
-        fileSpec = compileUnit.GetFileSpec()
-        filename = fileSpec.GetFilename()
-        directory = fileSpec.GetDirectory()
-        if len(self.__filter) == 0 or self.__filter in filename or self.__filter in directory:
+    if simplified:
+      for filename in fabricSourceCode:
+        if len(self.__filter) == 0 \
+            or (filename is not None and self.__filter in filename):
           tableWidgetItem = QtGui.QTreeWidgetItem()
           tableWidgetItem.setText(0, filename)
-          tableWidgetItem.setText(1, directory)
+          tableWidgetItem.setText(1, '')
           self.addTopLevelItem(tableWidgetItem)
+    else:
+      for i in range(0, count):
+        module = target.GetModuleAtIndex(i)
+        compileUnitCount = module.GetNumCompileUnits()
+        for j in range(0, compileUnitCount):
+          compileUnit = module.GetCompileUnitAtIndex(j)
+          fileSpec = compileUnit.GetFileSpec()
+          filename = fileSpec.GetFilename()
+          directory = fileSpec.GetDirectory()
+          if len(self.__filter) == 0 \
+              or (filename is not None and self.__filter in filename) \
+              or (directory is not None and self.__filter in directory):
+            tableWidgetItem = QtGui.QTreeWidgetItem()
+            tableWidgetItem.setText(0, filename)
+            tableWidgetItem.setText(1, directory)
+            self.addTopLevelItem(tableWidgetItem)
     self.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
 sourcesResultsWidget = SourcesResultsWidget()
@@ -1098,13 +1134,14 @@ mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
 mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
+mainWindow.tabifyDockWidget(localsWidget_dockWidget, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyDisplayWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
+mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, threadsWidget_dockWidget)
+mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, disassemblyDisplayWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
+outputWidget_dockWidget.setMinimumWidth(640)
 mainWindow.show()
 
 def handleDebuggerEvents():
@@ -1214,18 +1251,68 @@ timer.start(100)
 
 lldbDisplay.appendDebuggerOutput("Welcome to zBug version %s!\n" % app.applicationVersion())
 
+fabricSocket = None
 if options.fabric:
+  lldbDisplay.appendDebuggerOutput("Waiting to connect to Fabric Engine process...\n")
+
   pidpath = os.environ['HOME']+'/.fabric-engine/.private/fabric.pid'
   try:
     pid = open(pidpath).read()
     os.kill(int(pid), 0)
     options.pid = pid
-  except OSError:
-    print "Fabric Engine pid file found but process is no longer running"
-    sys.exit(1)
+    print "Found existing Fabric Engine process "+str(pid)
   except Exception as e:
-    print "No Fabric Engine pid file found in "+pidpath
-    sys.exit(1)
+    pass
+
+  class FabricSocket(object):
+    def __init__(self):
+      self.pending = ''
+      self.messages = []
+      self.connected = False
+      self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      self.update()
+
+      self.timer = QtCore.QTimer()
+      self.timer.timeout.connect(self.update)
+      self.timer.start(100)
+
+    def update(self):
+      # FIXME this needs to triggered on attach/launch
+      if not self.connected:
+        try:
+          self.sock.connect(('127.0.0.1', 3132))
+          self.connected = True
+        except Exception:
+          return
+      (r,w,x) = select.select([self.sock.fileno()], [], [], 0)
+      if len(r) > 0:
+        self.handleMessage(self.readMessage())
+      while len(self.messages) > 0:
+        self.handleMessage(self.readMessage())
+
+    def readMessage(self):
+      if len(self.messages) > 0:
+        return json.loads(self.messages.pop(0))
+      while self.pending.find('\n') == -1:
+        self.pending += self.sock.recv(20*1024)
+      self.messages = self.pending.split('\n')
+      self.pending = self.messages.pop()
+      return json.loads(self.messages.pop(0))
+
+    def handleMessage(self, data):
+      global fabricSourceCode
+      if data['cmd'] != 'SourceCode':
+        raise Exception('unexpected message from Fabric: '+str(data['cmd']))
+      filename = data['data']['filename']
+      source = data['data']['sourceCode']
+      remove = data['data']['remove']
+      # FIXME we are assuming that filenames are unique, which is untrue
+      if remove == 1:
+        del fabricSourceCode[os.path.basename(filename)]
+      else:
+        fabricSourceCode[os.path.basename(filename)] = source
+
+  fabricSocket = FabricSocket()
 
 if options.pid is not None:
   lldbCommandWidget.executeCommand(
@@ -1264,4 +1351,6 @@ lldbCommandWidget.setFocus()
 
 updateToolbarItems()
 
-sys.exit(app.exec_())
+code = app.exec_()
+fabricSocket = None
+sys.exit(code)
