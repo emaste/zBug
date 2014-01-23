@@ -80,6 +80,9 @@ class LineNumberArea(QtGui.QWidget):
   def paintEvent(self, event):
     self.__sourceCodeDisplayWidget.lineNumberAreaPaintEvent(event)
 
+  def mousePressEvent(self, event):
+    self.__sourceCodeDisplayWidget.lineNumberAreaClickEvent(event)
+
 class CodeDisplayWidget(QtGui.QPlainTextEdit):
   def __init__(self):
     QtGui.QPlainTextEdit.__init__(self)
@@ -116,6 +119,9 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
 
   def updateLineNumberAreaWidth(self):
     self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+  def lineNumberAreaClickEvent(self, event):
+    pass
 
   def lineNumberAreaPaintEvent(self, event):
     lineNumberArea = self.__lineNumberArea
@@ -172,7 +178,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
 
-    self.__pathname = None
+    self.pathname = None
 
     self.setReadOnly(True)
     self.setFont(font)
@@ -180,6 +186,9 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
 
     lineNumberArea = LineNumberArea(self)
     self.__lineNumberArea = lineNumberArea
+
+    self.__highlightLine = 0
+    self.__breakpointLines = []
 
     def updateLineNumberAreaWidth(newBlockCount):
       self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
@@ -197,6 +206,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
 
     updateLineNumberAreaWidth(0)
 
+    self.__breakpointsWidget = None
     self.updateDisplay("", 0)
 
   def resizeEvent(self, event):
@@ -215,6 +225,17 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
       max = max / 10
       digits = digits + 1
     return 3 + self.fontMetrics().width('9') * digits + 3
+
+  def setBreakpointsWidget(self, widget):
+    self.__breakpointsWidget = widget
+
+  def lineNumberAreaClickEvent(self, event):
+    firstBlock = self.firstVisibleBlock()
+    blockHeight = self.blockBoundingRect(firstBlock).height()
+    blockNum = int(event.y() / blockHeight) + firstBlock.blockNumber()
+    lineNum = blockNum+1
+    if self.__breakpointsWidget is not None:
+      self.__breakpointsWidget.toggleBreakpoint(self.pathname, lineNum)
 
   def lineNumberAreaPaintEvent(self, event):
     lineNumberArea = self.__lineNumberArea
@@ -238,24 +259,51 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
       bottom = top + int(self.blockBoundingRect(block).height())
       blockNumber = blockNumber + 1
 
-  def highlightLine(self, lineNumber):
-    document = self.document()
-    block = document.findBlockByLineNumber(lineNumber)
-    textCursor = self.textCursor()
-    textCursor.setPosition(block.position())
-    self.setTextCursor(textCursor)
+  def markBreakpointLines(self, lines):
+    self.__breakpointLines = lines
+    self.addHighlights()
 
-    selection = QtGui.QTextEdit.ExtraSelection()
-    lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
-    selection.format.setBackground(lineColor)
-    selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
-    selection.cursor = textCursor
-    selection.cursor.clearSelection()
-    self.setExtraSelections([selection]);
+  def highlightLine(self, lineNumber):
+    self.__highlightLine = lineNumber
+    self.addHighlights()
+
+  def addHighlights(self):
+    selections = []
+    document = self.document()
+
+    for lineNumber in self.__breakpointLines:
+      block = document.findBlockByLineNumber(lineNumber)
+      textCursor = self.textCursor()
+      textCursor.setPosition(block.position())
+      self.setTextCursor(textCursor)
+
+      selection = QtGui.QTextEdit.ExtraSelection()
+      lineColor = QtGui.QColor(QtCore.Qt.red).lighter(160)
+      selection.format.setBackground(lineColor)
+      selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+      selection.cursor = textCursor
+      selection.cursor.clearSelection()
+      selections.append(selection)
+
+    if self.__highlightLine > 0:
+      block = document.findBlockByLineNumber(self.__highlightLine)
+      textCursor = self.textCursor()
+      textCursor.setPosition(block.position())
+      self.setTextCursor(textCursor)
+
+      selection = QtGui.QTextEdit.ExtraSelection()
+      lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
+      selection.format.setBackground(lineColor)
+      selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+      selection.cursor = textCursor
+      selection.cursor.clearSelection()
+      selections.append(selection)
+
+    self.setExtraSelections(selections)
 
   def updateDisplay(self, pathname, lineNumber):
-    newPathname = pathname != self.__pathname
-    self.__pathname = pathname
+    newPathname = pathname != self.pathname
+    self.pathname = pathname
 
     if len(pathname) > 0:
       if newPathname:
@@ -277,7 +325,8 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
             contents = "Unable to read file:\n  %s\n" % str(e)
             lineNumber = 0
         self.setPlainText(contents)
-        self.parent().setWindowTitle(os.path.basename(pathname))
+        if self.parent() is not None:
+          self.parent().setTitle(os.path.basename(pathname))
     else:
       self.setPlainText("No source code for this location")
       lineNumber = 0
@@ -285,7 +334,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     if lineNumber >= 1:
       self.highlightLine(lineNumber - 1)
     else:
-      self.setExtraSelections([])
+      self.highlightLine(0)
 
   def updateDisplayForLineEntry(self, lineEntry):
     fileSpec = lineEntry.GetFileSpec()
@@ -999,6 +1048,81 @@ lldbLayout.addLayout(lldbCommandLayout)
 lldbWidget = QtGui.QWidget()
 lldbWidget.setLayout(lldbLayout)
 
+class BreakpointsWidget(QtGui.QTreeWidget):
+  class BP(object):
+    def __init__(self, file, line):
+      self.file = file
+      self.line = line
+    def __eq__(a, b):
+      return a.file == b.file and a.line == b.line
+
+  def __init__(self, sourceCodeDisplay):
+    QtGui.QTreeWidget.__init__(self)
+
+    self.__breakpoints = {}
+    self.__sourceCodeDisplayWidget = sourceCodeDisplay
+
+    self.setIndentation(12)
+    self.setHeaderLabels([
+      "ID",
+      "Description",
+    ])
+
+    settings.beginGroup("BreakpointsWidget")
+    self.setColumnWidth(0, int(settings.value("firstColumnWidth", 100)))
+    self.setColumnWidth(1, int(settings.value("secondColumnWidth", 300)))
+    settings.endGroup()
+
+    def itemWasClicked(item, column):
+      bpid = int(item.text(0))
+      # [andrew 20140123] applies for internal breakpoints, which we will hide next version
+      if not self.__breakpoints.has_key(bpid):
+        return
+      bp = self.__breakpoints[bpid]
+      self.__sourceCodeDisplayWidget.updateDisplay(bp.file, 0)
+      self.markBreakpoints()
+    self.itemClicked.connect(itemWasClicked)
+
+  def hideEvent(self, event):
+    settings.beginGroup("BreakpointsWidget")
+    settings.setValue("firstColumnWidth", self.columnWidth(0))
+    settings.endGroup()
+    QtGui.QTreeWidget.hideEvent(self, event)
+
+  def toggleBreakpoint(self, filename, lineNum):
+    # [andrew 20140123] FIXME incorrectly assume unique filenames
+    filename = os.path.basename(filename)
+    newvalue = BreakpointsWidget.BP(filename, lineNum)
+    if newvalue not in self.__breakpoints.values():
+      bp = debugger.GetSelectedTarget().BreakpointCreateByLocation(str(filename), int(lineNum))
+      self.__breakpoints[bp.id] = newvalue
+    else:
+      for bpid, bpvalue in self.__breakpoints.iteritems():
+        if newvalue == bpvalue:
+          debugger.GetSelectedTarget().BreakpointDelete(bpid)
+          del self.__breakpoints[bpid]
+          break
+    self.updateBreakpoints()
+
+  def updateBreakpoints(self):
+    self.clear()
+    for bp in debugger.GetSelectedTarget().breakpoint_iter():
+      item = QtGui.QTreeWidgetItem()
+      item.setText(0, str(bp.id))
+      item.setText(1, str(bp))
+      self.addTopLevelItem(item)
+    self.markBreakpoints()
+
+  def markBreakpoints(self):
+    lines = []
+    for bpid, value in self.__breakpoints.iteritems():
+      if value.file == self.__sourceCodeDisplayWidget.pathname:
+        lines.append(value.line-1)
+    self.__sourceCodeDisplayWidget.markBreakpointLines(lines)
+
+breakpointsWidget = BreakpointsWidget(sourceCodeDisplayWidget)
+sourceCodeDisplayWidget.setBreakpointsWidget(breakpointsWidget)
+
 stackWidget_dockWidget = QtGui.QDockWidget()
 stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
 stackWidget_dockWidget.setWindowTitle("Stack")
@@ -1044,6 +1168,11 @@ sourcesWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.Q
 sourcesWidget_dockWidget.setWindowTitle("Sources")
 sourcesWidget_dockWidget.setWidget(sourcesWidget)
 
+breakpointsWidget_dockWidget = QtGui.QDockWidget()
+breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+breakpointsWidget_dockWidget.setWindowTitle("Breakpoints")
+breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
+
 class MainWindow(QtGui.QMainWindow):
   def __init__(self, name):
     QtGui.QMainWindow.__init__(self)
@@ -1060,6 +1189,9 @@ class MainWindow(QtGui.QMainWindow):
       self.showMaximized()
     settings.endGroup()
 
+    self.setTitle(name)
+
+  def setTitle(self, name):
     title = "%s: %s" % (app.applicationName(), name)
     self.setWindowTitle(title)
 
@@ -1134,6 +1266,7 @@ mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
 mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
+mainWindow.tabifyDockWidget(localsWidget_dockWidget, breakpointsWidget_dockWidget)
 mainWindow.tabifyDockWidget(localsWidget_dockWidget, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
@@ -1282,6 +1415,7 @@ if options.fabric:
         try:
           self.sock.connect(('127.0.0.1', 3132))
           self.connected = True
+          lldbDisplay.appendDebuggerOutput("Connected to Fabric Engine process\n")
         except Exception:
           return
       (r,w,x) = select.select([self.sock.fileno()], [], [], 0)
@@ -1306,7 +1440,7 @@ if options.fabric:
       filename = data['data']['filename']
       source = data['data']['sourceCode']
       remove = data['data']['remove']
-      # FIXME we are assuming that filenames are unique, which is untrue
+      # [andrew 20140123] FIXME incorrectly assume unique filenames
       if remove == 1:
         del fabricSourceCode[os.path.basename(filename)]
       else:
