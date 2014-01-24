@@ -336,6 +336,9 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     else:
       self.highlightLine(0)
 
+    if self.__breakpointsWidget is not None:
+      self.__breakpointsWidget.markBreakpoints()
+
   def updateDisplayForLineEntry(self, lineEntry):
     fileSpec = lineEntry.GetFileSpec()
     if fileSpec.GetFilename():
@@ -1115,8 +1118,10 @@ class BreakpointsWidget(QtGui.QTreeWidget):
 
   def markBreakpoints(self):
     lines = []
+    # [andrew 20140123] FIXME incorrectly assume unique filenames
+    currentFile = os.path.basename(self.__sourceCodeDisplayWidget.pathname)
     for bpid, value in self.__breakpoints.iteritems():
-      if value.file == self.__sourceCodeDisplayWidget.pathname:
+      if value.file == currentFile:
         lines.append(value.line-1)
     self.__sourceCodeDisplayWidget.markBreakpointLines(lines)
 
@@ -1266,7 +1271,6 @@ mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
 mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
-mainWindow.tabifyDockWidget(localsWidget_dockWidget, breakpointsWidget_dockWidget)
 mainWindow.tabifyDockWidget(localsWidget_dockWidget, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
@@ -1274,6 +1278,7 @@ mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, threadsWidget_dockWidget)
 mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, disassemblyDisplayWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
+mainWindow.tabifyDockWidget(outputWidget_dockWidget, breakpointsWidget_dockWidget)
 outputWidget_dockWidget.setMinimumWidth(640)
 mainWindow.show()
 
@@ -1383,6 +1388,13 @@ timer.timeout.connect(handleDebuggerEvents)
 timer.start(100)
 
 lldbDisplay.appendDebuggerOutput("Welcome to zBug version %s!\n" % app.applicationVersion())
+
+# [andrew 20140124] for LLDB's own logging messages, enabling different types of these
+# is done via the console using "log enable <type> <subtype/all>"
+def logToStdout(msg):
+  sys.stdout.write(msg)
+  sys.stdout.flush()
+debugger.SetLoggingCallback(logToStdout)
 
 fabricSocket = None
 if options.fabric:
