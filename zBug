@@ -9,7 +9,10 @@ config = {
   'connectFabric': True,
 
   # only show KL code in the source code list
-  'onlyShowKLCode': True
+  'onlyShowKLCode': True,
+
+  # do some limited client-side interpretation for Fabric types
+  'interpretFabricTypes': True,
 }
 
 # must use optparse over argparse to support python 2.6
@@ -460,20 +463,57 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
 
     self.setText(0, value.GetName())
 
-    self.setText(1, value.GetValue())
+    typeName = value.GetTypeName()
+    valueText = value.GetValue()
+    summaryText = value.GetSummary()
+
+    showChildren = True
+    extraChildren = []
+    if typeName is not None and config['interpretFabricTypes']:
+      if typeName == 'String':
+        flags = value.GetChildMemberWithName('indFlagAndLength')
+        u = value.GetChildMemberWithName('u')
+        if int(flags.GetValue()) & 0x80000000:
+          value = u.GetChildMemberWithName('ind').GetChildMemberWithName('dataPtr')
+        else:
+          value = u.GetChildMemberWithName('dir').GetChildMemberWithName('data')
+        valueText = value.GetSummary()
+        summaryText = ''
+        showChildren = False
+      elif '[]' in typeName:
+        size = value.GetChildMemberWithName('size')
+        elements = value.GetChildMemberWithName('elements')
+        if size.IsValid() and elements.IsValid():
+          size = size.GetValue()
+          if not size is None:
+            elemtype = elements.GetChildAtIndex(0).GetType()
+            size = int(size)
+            # limit max displayed array size
+            if size > 1024:
+              size = 1024
+            for num in range(size):
+              name = '['+str(num)+']'
+              data = elements.GetPointeeData(num)
+              elem = elements.CreateValueFromData(name, data, elemtype)
+              extraChildren.append(elem)
+
+    self.setText(1, valueText)
     if value.GetValueDidChange():
       self.setBackground(1, self.__dynamicColor)
     else:
       self.setBackground(1, self.background(0))
 
     if includeExtras:
-      self.setText(2, value.GetSummary())
+      self.setText(2, summaryText)
       if value.GetValueDidChange():
         self.setBackground(2, self.__dynamicColor)
       else:
         self.setBackground(2, self.background(0))
 
-      self.setText(3, value.GetTypeName())
+    self.setText(3, typeName)
+
+    if not showChildren:
+      return
 
     childCount = value.GetNumChildren()
     if childCount > 0:
@@ -497,6 +537,18 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
         childValueWidgetItem.setValue(childValue)
         self.addChild(childValueWidgetItem)
         childValueWidgetItem.refresh()
+
+      for c in extraChildren:
+        childValueName = c.GetName()
+        if childValueName in self.__childItems:
+          childValueWidgetItem = self.__childItems[childValueName]
+        else:
+          childValueWidgetItem = ValueWidgetItem(self.__includeExtras)
+          self.__childItems[childValueName] = childValueWidgetItem
+        childValueWidgetItem.setValue(c)
+        self.addChild(childValueWidgetItem)
+        childValueWidgetItem.refresh()
+       
       self.treeWidget().expandItem(self)
 
 class LocalsWidget(QtGui.QTreeWidget):
