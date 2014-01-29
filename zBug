@@ -1,22 +1,25 @@
 #!/usr/bin/python
 
 import sys, os, platform, commands, stat, signal, optparse
-import json, select, socket, time
+import json, select, socket
 from PySide import QtCore, QtGui
 
-simplified = True
+config = {
+  # assume that we're debugging a Fabric app and try to connect
+  'connectFabric': True,
+
+  # only show KL code in the source code list
+  'onlyShowKLCode': True
+}
 
 # must use optparse over argparse to support python 2.6
 parser = optparse.OptionParser(usage="Usage: zBug [options] [<executable> [<arg> ...]]")
 parser.disable_interspersed_args()
-parser.add_option("-f", "--fabric",
-                  action="store_true", dest="fabric", default=False,
-                  help="connect to a running Fabric Engine process")
 parser.add_option("-p", "--pid", dest="pid",
                   help="attach to running process with pid PID", metavar="PID")
 (options, arguments) = parser.parse_args()
 
-if options.pid is None and not options.fabric and len(arguments) < 1:
+if options.pid is None and len(arguments) < 1:
   parser.print_help()
   sys.exit(1)
 
@@ -59,7 +62,7 @@ debugger.SetAsync(True)
 app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
-app.setApplicationVersion("0.2.0")
+app.setApplicationVersion("1.11.0")
 
 settings = QtCore.QSettings()
 
@@ -308,7 +311,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     if len(pathname) > 0:
       if newPathname:
         contents = None
-        if options.fabric:
+        if config['connectFabric']:
           if pathname.find("(internal)") != -1:
             contents = "Internal KL function, no source code available."
           elif fabricSourceCode.has_key(pathname):
@@ -882,7 +885,7 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
     QtGui.QTreeWidget.__init__(self)
 
     self.setIndentation(0)
-    if simplified:
+    if config['onlyShowKLCode']:
       self.setHeaderLabels([
         "Filename",
         ])
@@ -897,7 +900,7 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
       if currentItem:
         filename = currentItem.text(0)
         pathname = filename
-        if simplified:
+        if config['onlyShowKLCode']:
           pathname = filename
         else:
           directory = currentItem.text(1)
@@ -920,7 +923,7 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
         count = target.GetNumModules()
 
     self.clear()
-    if simplified:
+    if config['onlyShowKLCode']:
       for filename in fabricSourceCode:
         if len(self.__filter) == 0 \
             or (filename is not None and self.__filter in filename):
@@ -1266,7 +1269,6 @@ def updateToolbarItems():
     else:
       startAction.setEnabled(True)
 
-# FIXME use something useful as the name
 mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
 mainWindow.addToolBar(toolBar)
@@ -1397,7 +1399,7 @@ def logToStdout(msg):
 debugger.SetLoggingCallback(logToStdout)
 
 fabricSocket = None
-if options.fabric:
+if config['connectFabric']:
   lldbDisplay.appendDebuggerOutput("Waiting to connect to Fabric Engine process...\n")
 
   pidpath = os.environ['HOME']+'/.fabric-engine/.private/fabric.pid'
