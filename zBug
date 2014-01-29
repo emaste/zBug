@@ -1505,14 +1505,15 @@ if config['connectFabric']:
       global fabricSourceCode
       if data['cmd'] != 'SourceCode':
         raise Exception('unexpected message from Fabric: '+str(data['cmd']))
-      filename = data['data']['filename']
-      source = data['data']['sourceCode']
-      remove = data['data']['remove']
-      # [andrew 20140123] FIXME incorrectly assume unique filenames
-      if remove == 1:
-        del fabricSourceCode[os.path.basename(filename)]
-      else:
-        fabricSourceCode[os.path.basename(filename)] = source
+      if 'filename' in data['data']:
+        filename = data['data']['filename']
+        source = data['data']['sourceCode']
+        remove = data['data']['remove']
+        # [andrew 20140123] FIXME incorrectly assume unique filenames
+        if remove == 1:
+          del fabricSourceCode[os.path.basename(filename)]
+        else:
+          fabricSourceCode[os.path.basename(filename)] = source
 
   fabricSocket = FabricSocket()
 
