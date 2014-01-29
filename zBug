@@ -529,6 +529,8 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
       for i in range(0, childCount):
         childValue = value.GetChildAtIndex(i)
         childValueName = childValue.GetName()
+        if childValueName is None:
+          continue
         if childValueName in self.__childItems:
           childValueWidgetItem = self.__childItems[childValueName]
         else:
