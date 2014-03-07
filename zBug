@@ -22,10 +22,6 @@ parser.add_option("-p", "--pid", dest="pid",
                   help="attach to running process with pid PID", metavar="PID")
 (options, arguments) = parser.parse_args()
 
-if options.pid is None and len(arguments) < 1:
-  parser.print_help()
-  sys.exit(1)
-
 #----------------------------------------------------------------------
 # Code that auto imports LLDB (from LLDB source code)
 #----------------------------------------------------------------------
@@ -1473,11 +1469,7 @@ if config['connectFabric']:
       self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       self.update()
 
-      self.timer = QtCore.QTimer()
-      self.timer.timeout.connect(self.update)
-      self.timer.start(100)
-
-    def update(self):
+    def update(self, timeout=0):
       # FIXME this needs to triggered on attach/launch
       if not self.connected:
         try:
@@ -1486,11 +1478,15 @@ if config['connectFabric']:
           lldbDisplay.appendDebuggerOutput("Connected to Fabric Engine process\n")
         except Exception:
           return
-      (r,w,x) = select.select([self.sock.fileno()], [], [], 0)
+      (r,w,x) = select.select([self.sock.fileno()], [], [], timeout)
+      didRead = False
       if len(r) > 0:
         self.handleMessage(self.readMessage())
+        didRead = True
       while len(self.messages) > 0:
         self.handleMessage(self.readMessage())
+        didRead = True
+      return didRead
 
     def readMessage(self):
       if len(self.messages) > 0:
@@ -1516,6 +1512,12 @@ if config['connectFabric']:
           fabricSourceCode[os.path.basename(filename)] = source
 
   fabricSocket = FabricSocket()
+  # [andrew 20140306] read all available data
+  while fabricSocket.update(0.5):
+    pass
+  fabricSocket.timer = QtCore.QTimer()
+  fabricSocket.timer.timeout.connect(fabricSocket.update)
+  fabricSocket.timer.start(100)
 
 if options.pid is not None:
   lldbCommandWidget.executeCommand(
@@ -1525,6 +1527,10 @@ if options.pid is not None:
   sourcesResultsWidget.updateDisplay()
   updateToolbarItems()
 else:
+  if len(arguments) < 1:
+    parser.print_help()
+    sys.exit(1)
+
   # Search PATH for executable
   def resolveExecutable(executable):
     try:
