@@ -1452,14 +1452,16 @@ fabricSocket = None
 if config['connectFabric']:
   lldbDisplay.appendDebuggerOutput("Waiting to connect to Fabric Engine process...\n")
 
-  pidpath = os.environ['HOME']+'/.fabric-engine/.private/fabric.pid'
-  try:
-    pid = open(pidpath).read()
-    os.kill(int(pid), 0)
-    options.pid = pid
-    print "Found existing Fabric Engine process "+str(pid)
-  except Exception as e:
-    pass
+  # [andrew 20140314] don't auto-connect if there are arguments passed
+  if len(arguments) < 1:
+    pidpath = os.environ['HOME']+'/.fabric-engine/.private/fabric.pid'
+    try:
+      pid = open(pidpath).read()
+      os.kill(int(pid), 0)
+      options.pid = pid
+      print "Found existing Fabric Engine process "+str(pid)
+    except Exception as e:
+      pass
 
   class FabricSocket(object):
     def __init__(self):
