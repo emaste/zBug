@@ -1521,6 +1521,10 @@ if config['connectFabric']:
   fabricSocket.timer.timeout.connect(fabricSocket.update)
   fabricSocket.timer.start(100)
 
+lldbCommandWidget.executeCommand(
+  "settings set -- auto-confirm true"
+  )
+
 if options.pid is not None:
   lldbCommandWidget.executeCommand(
     "process attach --pid=%s" % options.pid
