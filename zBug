@@ -1,81 +1,75 @@
 #!/usr/bin/python
 
-import sys, os, platform, commands, stat, signal
+import sys, os, platform, commands, stat, signal, optparse
+import json, select, socket
 from PySide import QtCore, QtGui
 
-if len(sys.argv) <= 1:
-  print "Usage: zBug <executable> [<arg> ...]"
-  sys.exit(1)
-executable = sys.argv[1]
-arguments = sys.argv[2:]
+config = {
+  # assume that we're debugging a Fabric app and try to connect
+  'connectFabric': True,
+
+  # only show KL code in the source code list
+  'onlyShowKLCode': True,
+
+  # do some limited client-side interpretation for Fabric types
+  'interpretFabricTypes': True,
+}
+
+# must use optparse over argparse to support python 2.6
+parser = optparse.OptionParser(usage="Usage: zBug [options] [<executable> [<arg> ...]]")
+parser.disable_interspersed_args()
+parser.add_option("-p", "--pid", dest="pid",
+                  help="attach to running process with pid PID", metavar="PID")
+(options, arguments) = parser.parse_args()
 
 #----------------------------------------------------------------------
 # Code that auto imports LLDB (from LLDB source code)
 #----------------------------------------------------------------------
-try: 
-    # Just try for LLDB in case PYTHONPATH is already correctly setup
-    import lldb
+try:
+  # Just try for LLDB in case PYTHONPATH is already correctly setup
+  import lldb
 except ImportError:
-    lldb_python_dirs = list()
-    # lldb is not in the PYTHONPATH, try some defaults for the current platform
-    platform_system = platform.system()
-    if platform_system == 'Darwin':
-        # On Darwin, try the currently selected Xcode directory
-        xcode_dir = commands.getoutput("xcode-select --print-path")
-        if xcode_dir:
-            lldb_python_dirs.append(os.path.realpath(xcode_dir + '/../SharedFrameworks/LLDB.framework/Resources/Python'))
-            lldb_python_dirs.append(xcode_dir + '/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
-        lldb_python_dirs.append('/System/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
-    success = False
-    for lldb_python_dir in lldb_python_dirs:
-        if os.path.exists(lldb_python_dir):
-            if not (sys.path.__contains__(lldb_python_dir)):
-                sys.path.append(lldb_python_dir)
-                try: 
-                    import lldb
-                except ImportError:
-                    pass
-                else:
-                    success = True
-                    break
-    if not success:
-        print "error: couldn't locate the 'lldb' module, please set PYTHONPATH correctly"
-        sys.exit(1)
+  lldb_python_dirs = list()
+  # lldb is not in the PYTHONPATH, try some defaults for the current platform
+  platform_system = platform.system()
+  if platform_system == 'Darwin':
+    # On Darwin, try the currently selected Xcode directory
+    xcode_dir = commands.getoutput("xcode-select --print-path")
+    if xcode_dir:
+      lldb_python_dirs.append(os.path.realpath(xcode_dir + '/../SharedFrameworks/LLDB.framework/Resources/Python'))
+      lldb_python_dirs.append(xcode_dir + '/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
+    lldb_python_dirs.append('/System/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
+  success = False
+  for lldb_python_dir in lldb_python_dirs:
+    if os.path.exists(lldb_python_dir):
+      if not (sys.path.__contains__(lldb_python_dir)):
+        sys.path.append(lldb_python_dir)
+        try:
+          import lldb
+        except ImportError:
+          pass
+        else:
+          success = True
+          break
+  if not success:
+    print "error: couldn't locate the 'lldb' module, please set PYTHONPATH correctly"
+    sys.exit(1)
 
 debugger = lldb.SBDebugger.Create()
 debugger.SetAsync(True)
 
-# Search PATH for executable
-def resolveExecutable(executable):
-  try:
-    if stat.S_ISREG(os.stat(executable).st_mode):
-      return executable
-  except:
-    pass
-  
-  pathDirs = os.environ['PATH'].split(":")
-  for pathDir in pathDirs:
-    pathedExecutable = os.path.join(pathDir, executable)
-    try:
-      if stat.S_ISREG(os.stat(pathedExecutable).st_mode):
-        return pathedExecutable
-    except:
-      pass
-  
-  print "Unable to find executable '%s'" % executable
-  sys.exit(1)
-executable = resolveExecutable(executable)
-
 app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
-app.setApplicationVersion("0.2.0")
+app.setApplicationVersion("1.11.4")
 
 settings = QtCore.QSettings()
 
 font = QtGui.QFont()
 font.setPointSize(12)
 font.setFamily("Courier")
+
+fabricSourceCode = {}
 
 class LineNumberArea(QtGui.QWidget):
   def __init__(self, sourceCodeDisplayWidget):
@@ -87,6 +81,9 @@ class LineNumberArea(QtGui.QWidget):
 
   def paintEvent(self, event):
     self.__sourceCodeDisplayWidget.lineNumberAreaPaintEvent(event)
+
+  def mousePressEvent(self, event):
+    self.__sourceCodeDisplayWidget.lineNumberAreaClickEvent(event)
 
 class CodeDisplayWidget(QtGui.QPlainTextEdit):
   def __init__(self):
@@ -125,6 +122,9 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
   def updateLineNumberAreaWidth(self):
     self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
 
+  def lineNumberAreaClickEvent(self, event):
+    pass
+
   def lineNumberAreaPaintEvent(self, event):
     lineNumberArea = self.__lineNumberArea
     painter = QtGui.QPainter(lineNumberArea)
@@ -146,7 +146,7 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
       top = bottom
       bottom = top + int(self.blockBoundingRect(block).height())
       blockNumber = blockNumber + 1
-    
+
   def highlightLine(self, lineNumber):
     document = self.document()
     block = document.findBlockByLineNumber(lineNumber)
@@ -179,34 +179,38 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
 class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
   def __init__(self, parent=None):
     QtGui.QPlainTextEdit.__init__(self, parent)
-    
-    self.__pathname = None
-    
+
+    self.pathname = None
+
     self.setReadOnly(True)
     self.setFont(font)
     self.setCenterOnScroll(True)
-    
+
     lineNumberArea = LineNumberArea(self)
     self.__lineNumberArea = lineNumberArea
-    
+
+    self.__highlightLine = 0
+    self.__breakpointLines = []
+
     def updateLineNumberAreaWidth(newBlockCount):
       self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
     self.blockCountChanged.connect(updateLineNumberAreaWidth)
-    
+
     def updateLineNumberArea(rect, dy):
       if dy != 0:
         lineNumberArea.scroll(0, dy)
       else:
         lineNumberArea.update(0, rect.y(), lineNumberArea.width(), rect.height())
-      
+
       if rect.contains(self.viewport().rect()):
         updateLineNumberAreaWidth(0)
     self.updateRequest.connect(updateLineNumberArea)
-    
+
     updateLineNumberAreaWidth(0)
-    
+
+    self.__breakpointsWidget = None
     self.updateDisplay("", 0)
-  
+
   def resizeEvent(self, event):
     QtGui.QWidget.resizeEvent(self, event)
     cr = self.contentsRect()
@@ -223,6 +227,17 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
       max = max / 10
       digits = digits + 1
     return 3 + self.fontMetrics().width('9') * digits + 3
+
+  def setBreakpointsWidget(self, widget):
+    self.__breakpointsWidget = widget
+
+  def lineNumberAreaClickEvent(self, event):
+    firstBlock = self.firstVisibleBlock()
+    blockHeight = self.blockBoundingRect(firstBlock).height()
+    blockNum = int(event.y() / blockHeight) + firstBlock.blockNumber()
+    lineNum = blockNum+1
+    if self.__breakpointsWidget is not None:
+      self.__breakpointsWidget.toggleBreakpoint(self.pathname, lineNum)
 
   def lineNumberAreaPaintEvent(self, event):
     lineNumberArea = self.__lineNumberArea
@@ -245,44 +260,86 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
       top = bottom
       bottom = top + int(self.blockBoundingRect(block).height())
       blockNumber = blockNumber + 1
-    
-  def highlightLine(self, lineNumber):
-    document = self.document()
-    block = document.findBlockByLineNumber(lineNumber)
-    textCursor = self.textCursor()
-    textCursor.setPosition(block.position())
-    self.setTextCursor(textCursor)
 
-    selection = QtGui.QTextEdit.ExtraSelection()
-    lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
-    selection.format.setBackground(lineColor)
-    selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
-    selection.cursor = textCursor
-    selection.cursor.clearSelection()
-    self.setExtraSelections([selection]);
+  def markBreakpointLines(self, lines):
+    self.__breakpointLines = lines
+    self.addHighlights()
+
+  def highlightLine(self, lineNumber):
+    self.__highlightLine = lineNumber
+    self.addHighlights()
+
+  def addHighlights(self):
+    selections = []
+    document = self.document()
+
+    for lineNumber in self.__breakpointLines:
+      block = document.findBlockByLineNumber(lineNumber)
+      textCursor = self.textCursor()
+      textCursor.setPosition(block.position())
+      self.setTextCursor(textCursor)
+
+      selection = QtGui.QTextEdit.ExtraSelection()
+      lineColor = QtGui.QColor(QtCore.Qt.red).lighter(160)
+      selection.format.setBackground(lineColor)
+      selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+      selection.cursor = textCursor
+      selection.cursor.clearSelection()
+      selections.append(selection)
+
+    if self.__highlightLine > 0:
+      block = document.findBlockByLineNumber(self.__highlightLine)
+      textCursor = self.textCursor()
+      textCursor.setPosition(block.position())
+      self.setTextCursor(textCursor)
+
+      selection = QtGui.QTextEdit.ExtraSelection()
+      lineColor = QtGui.QColor(QtCore.Qt.yellow).lighter(160)
+      selection.format.setBackground(lineColor)
+      selection.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+      selection.cursor = textCursor
+      selection.cursor.clearSelection()
+      selections.append(selection)
+
+    self.setExtraSelections(selections)
 
   def updateDisplay(self, pathname, lineNumber):
-    newPathname = pathname != self.__pathname
-    self.__pathname = pathname
-    
+    newPathname = pathname != self.pathname
+    self.pathname = pathname
+
     if len(pathname) > 0:
       if newPathname:
-        try:
-          f = open(pathname, 'r')
-          contents = f.read()
-          f.close()
-        except IOError as e:
-          contents = "Unable to read file:\n  %s\n" % str(e)
-          lineNumber = 0
+        contents = None
+        if config['connectFabric']:
+          if pathname.find("(internal)") != -1:
+            contents = "Internal KL function, no source code available."
+          elif fabricSourceCode.has_key(pathname):
+            contents = fabricSourceCode[pathname]
+          elif fabricSourceCode.has_key(os.path.basename(pathname)):
+            contents = fabricSourceCode[os.path.basename(pathname)]
+
+        if contents is None:
+          try:
+            f = open(pathname, 'r')
+            contents = f.read()
+            f.close()
+          except IOError as e:
+            contents = "Unable to read file:\n  %s\n" % str(e)
+            lineNumber = 0
         self.setPlainText(contents)
+        if self.parent() is not None:
+          self.parent().setTitle(os.path.basename(pathname))
     else:
       self.setPlainText("No source code for this location")
       lineNumber = 0
-    
+
     if lineNumber >= 1:
       self.highlightLine(lineNumber - 1)
     else:
-      self.setExtraSelections([])
+      self.highlightLine(0)
+
+    if self.__breakpointsWidget is not None:
+      self.__breakpointsWidget.markBreakpoints()
 
   def updateDisplayForLineEntry(self, lineEntry):
     fileSpec = lineEntry.GetFileSpec()
@@ -307,11 +364,11 @@ class DisassemblyDisplayWidget(CodeDisplayWidget):
     self.__frame = frame
     pc = frame.GetPC()
     pcAddress = frame.GetPCAddress()
-    
+
     thread = frame.GetThread()
     process = thread.GetProcess()
     target = process.GetTarget()
-    
+
     function = frame.GetFunction()
     if function:
       instructions = function.GetInstructions(target)
@@ -360,12 +417,12 @@ disassemblyDisplayWidget = DisassemblyDisplayWidget()
 class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, includeExtras):
     QtGui.QTreeWidgetItem.__init__(self)
-    
+
     self.__value = None
     self.__expanded = False
     self.__childItems = {}
     self.__includeExtras = includeExtras
-    
+
     self.setFlags(
       QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEditable
       )
@@ -373,64 +430,103 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     self.setFont(1, font)
     if includeExtras:
       self.setFont(2, font)
-    
+
     self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
-  
+
   def setValue(self, value):
     self.__value = value
-  
+
   def wasExpanded(self):
     if not self.__expanded:
       self.__expanded = True
       self.refresh()
-  
+
   def wasCollapsed(self):
     if self.__expanded:
       self.__expanded = False
       while self.childCount() > 0:
         child = self.takeChild(0)
         child.setValue(None)
-  
+
   def hasChanged(self):
     error = lldb.SBError()
     self.__value.SetValueFromCString(str(self.text(1)), error)
     self.refresh()
-  
+
   def refresh(self):
     value = self.__value
     includeExtras = self.__includeExtras
-    
+
     self.setText(0, value.GetName())
-    
-    self.setText(1, value.GetValue())
+
+    typeName = value.GetTypeName()
+    valueText = value.GetValue()
+    summaryText = value.GetSummary()
+
+    showChildren = True
+    extraChildren = []
+    if typeName is not None and config['interpretFabricTypes']:
+      if typeName == 'String':
+        flags = value.GetChildMemberWithName('indFlagAndLength')
+        u = value.GetChildMemberWithName('u')
+        if int(flags.GetValue()) & 0x80000000:
+          value = u.GetChildMemberWithName('ind').GetChildMemberWithName('dataPtr')
+        else:
+          value = u.GetChildMemberWithName('dir').GetChildMemberWithName('data')
+        valueText = value.GetSummary()
+        summaryText = ''
+        showChildren = False
+      elif '[]' in typeName:
+        size = value.GetChildMemberWithName('size')
+        elements = value.GetChildMemberWithName('elements')
+        if size.IsValid() and elements.IsValid():
+          size = size.GetValue()
+          if not size is None:
+            elemtype = elements.GetChildAtIndex(0).GetType()
+            size = int(size)
+            # limit max displayed array size
+            if size > 1024:
+              size = 1024
+            for num in range(size):
+              name = '['+str(num)+']'
+              data = elements.GetPointeeData(num)
+              elem = elements.CreateValueFromData(name, data, elemtype)
+              extraChildren.append(elem)
+
+    self.setText(1, valueText)
     if value.GetValueDidChange():
       self.setBackground(1, self.__dynamicColor)
     else:
       self.setBackground(1, self.background(0))
-    
+
     if includeExtras:
-      self.setText(2, value.GetSummary())
+      self.setText(2, summaryText)
       if value.GetValueDidChange():
         self.setBackground(2, self.__dynamicColor)
       else:
         self.setBackground(2, self.background(0))
-      
-      self.setText(3, value.GetTypeName())
-    
+
+    self.setText(3, typeName)
+
+    if not showChildren:
+      return
+
     childCount = value.GetNumChildren()
     if childCount > 0:
       self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.ShowIndicator)
     else:
       self.setChildIndicatorPolicy(QtGui.QTreeWidgetItem.DontShowIndicator)
-    
+
     while self.childCount() > 0:
       topLevelItem = self.takeChild(0)
       topLevelItem.setValue(None)
-    
+
     if self.__expanded:
       for i in range(0, childCount):
         childValue = value.GetChildAtIndex(i)
         childValueName = childValue.GetName()
+        if childValueName is None:
+          continue
         if childValueName in self.__childItems:
           childValueWidgetItem = self.__childItems[childValueName]
         else:
@@ -439,14 +535,26 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
         childValueWidgetItem.setValue(childValue)
         self.addChild(childValueWidgetItem)
         childValueWidgetItem.refresh()
+
+      for c in extraChildren:
+        childValueName = c.GetName()
+        if childValueName in self.__childItems:
+          childValueWidgetItem = self.__childItems[childValueName]
+        else:
+          childValueWidgetItem = ValueWidgetItem(self.__includeExtras)
+          self.__childItems[childValueName] = childValueWidgetItem
+        childValueWidgetItem.setValue(c)
+        self.addChild(childValueWidgetItem)
+        childValueWidgetItem.refresh()
+       
       self.treeWidget().expandItem(self)
 
 class LocalsWidget(QtGui.QTreeWidget):
   def __init__(self):
     QtGui.QTreeWidget.__init__(self)
-    
+
     self.__topLevelItems = {}
-    
+
     self.setEnabled(False)
     self.setIndentation(12)
     self.setHeaderLabels([
@@ -455,44 +563,44 @@ class LocalsWidget(QtGui.QTreeWidget):
       "Details",
       "Type"
     ])
-    
+
     settings.beginGroup("LocalsWidget")
     self.setColumnWidth(0, int(settings.value("firstColumnWidth", 120)))
     self.setColumnWidth(1, int(settings.value("secondColumnWidth", 200)))
     settings.endGroup()
-    
+
     def itemExpanded(item):
       item.wasExpanded()
     self.itemExpanded.connect(itemExpanded)
-    
+
     def itemCollapsed(item):
       item.wasCollapsed()
     self.itemCollapsed.connect(itemCollapsed)
-    
+
     def itemWasDoubleClicked(item, column):
       if column == 1:
         self.editItem(item, column)
     self.itemDoubleClicked.connect(itemWasDoubleClicked)
-    
+
     def itemHasChanged(item):
       item.hasChanged()
     self.itemChanged.connect(itemHasChanged)
-  
+
   def hideEvent(self, event):
     settings.beginGroup("LocalsWidget")
     settings.setValue("firstColumnWidth", self.columnWidth(0))
     settings.setValue("secondColumnWidth", self.columnWidth(1))
     settings.endGroup()
     QtGui.QTreeWidget.hideEvent(self, event)
-  
+
   def setFrame(self, frame):
     enabled = False
-    
+
     if frame and frame.IsValid():
       while self.topLevelItemCount() > 0:
         topLevelItem = self.takeTopLevelItem(0)
         topLevelItem.setValue(None)
-      
+
       includeArguments = True
       includeLocals = True
       includeStatics = True
@@ -503,7 +611,7 @@ class LocalsWidget(QtGui.QTreeWidget):
         includeStatics,
         in_scope_only
         )
-      
+
       variableCount = variables.GetSize()
       for i in range(0, variableCount):
         value = variables.GetValueAtIndex(i)
@@ -516,9 +624,9 @@ class LocalsWidget(QtGui.QTreeWidget):
         valueWidgetItem.setValue(value)
         self.addTopLevelItem(valueWidgetItem)
         valueWidgetItem.refresh()
-      
+
       enabled = True
-    
+
     self.setEnabled(enabled)
 
 localsWidget = LocalsWidget()
@@ -555,12 +663,12 @@ class RegistersWidget(QtGui.QTreeWidget):
 
   def setFrame(self, frame):
     enabled = False
-    
+
     if frame and frame.IsValid():
       while self.topLevelItemCount() > 0:
         topLevelItem = self.takeTopLevelItem(0)
         topLevelItem.setValue(None)
-      
+
       registers = frame.GetRegisters()
       count = registers.GetSize()
       for i in range(0, count):
@@ -574,9 +682,9 @@ class RegistersWidget(QtGui.QTreeWidget):
         valueWidgetItem.setValue(value)
         self.addTopLevelItem(valueWidgetItem)
         valueWidgetItem.refresh()
-      
+
       enabled = True
-    
+
     self.setEnabled(enabled)
 
 registersWidget = RegistersWidget()
@@ -613,7 +721,7 @@ class StackWidget(QtGui.QTreeWidget):
     self.__disassemblyDisplayWidget = disassemblyDisplayWidget
     self.__localsWidget = localsWidget
     self.__registersWidget = registersWidget
-    
+
     self.setEnabled(False)
     self.setFocusPolicy(QtCore.Qt.NoFocus)
     self.setIndentation(0)
@@ -622,7 +730,7 @@ class StackWidget(QtGui.QTreeWidget):
       "PC",
       "Location"
     ])
-  
+
   def syncToSelectedItem(self):
     frame = None
     currentItem = self.currentItem()
@@ -634,7 +742,7 @@ class StackWidget(QtGui.QTreeWidget):
         if process and process.IsValid():
           thread = process.GetSelectedThread()
           thread.SetSelectedFrame(frameIndex)
-          
+
           frame = thread.GetFrameAtIndex(frameIndex)
           self.__sourceCodeDisplayWidget.updateDisplayForLineEntry(
             frame.GetLineEntry()
@@ -642,11 +750,11 @@ class StackWidget(QtGui.QTreeWidget):
           self.__disassemblyDisplayWidget.setFrame(frame)
     self.__localsWidget.setFrame(frame)
     self.__registersWidget.setFrame(frame)
-  
+
   def updateDisplay(self):
     self.setCurrentItem(None)
     enabled = False
-    
+
     target = debugger.GetSelectedTarget()
     if target and target.IsValid():
       process = target.GetProcess()
@@ -656,31 +764,31 @@ class StackWidget(QtGui.QTreeWidget):
           count = thread.GetNumFrames()
           if count > 0:
             self.__process = process
-            
+
             selectedFrame = thread.GetSelectedFrame()
             selectedFrameID = selectedFrame.GetFrameID()
-            
+
             try:
               self.currentItemChanged.disconnect()
             except:
               pass
             self.clear()
-            
+
             for i in range(0, count):
               frame = thread.GetFrameAtIndex(i)
               stackWidgetItem = StackWidgetItem(frame)
               self.addTopLevelItem(stackWidgetItem)
               if frame.GetFrameID() == selectedFrameID:
                 self.setCurrentItem(stackWidgetItem)
-            
+
             self.resizeColumnToContents(0)
             self.resizeColumnToContents(1)
-            
+
             self.syncToSelectedItem()
             def currentItemChanged(newItem, oldItem):
               self.syncToSelectedItem()
             self.currentItemChanged.connect(currentItemChanged)
-            
+
             enabled = True
     self.setEnabled(enabled)
 
@@ -745,17 +853,17 @@ class ThreadsWidget(QtGui.QTreeWidget):
     self.setCurrentItem(None)
     self.__process = None
     enabled = False
-    
+
     target = debugger.GetSelectedTarget()
     if target and target.IsValid():
       process = target.GetProcess()
       if process and process.IsValid() and process.GetState() == lldb.eStateStopped:
         self.__process = process
-        
+
         count = process.GetNumThreads()
         selectedThread = process.GetSelectedThread()
         selectedThreadID = selectedThread.GetThreadID()
-        
+
         self.clear()
         for i in range(0, count):
           thread = process.GetThreadAtIndex(i)
@@ -763,10 +871,10 @@ class ThreadsWidget(QtGui.QTreeWidget):
           self.addTopLevelItem(threadWidgetItem)
           if thread.GetThreadID() == selectedThreadID:
             self.setCurrentItem(threadWidgetItem)
-        
+
         self.resizeColumnToContents(0)
         self.resizeColumnToContents(1)
-        
+
         enabled = True
     self.setEnabled(enabled)
 
@@ -827,20 +935,29 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
     QtGui.QTreeWidget.__init__(self)
 
     self.setIndentation(0)
-    self.setHeaderLabels([
-      "Filename",
-      "Directory"
-      ])
+    if config['onlyShowKLCode']:
+      self.setHeaderLabels([
+        "Filename",
+        ])
+    else:
+      self.setHeaderLabels([
+        "Filename",
+        "Directory"
+        ])
 
     def currentItemChanged(newItem, oldItem):
       currentItem = self.currentItem()
       if currentItem:
         filename = currentItem.text(0)
-        directory = currentItem.text(1)
-        pathname = os.path.join(directory, filename)
+        pathname = filename
+        if config['onlyShowKLCode']:
+          pathname = filename
+        else:
+          directory = currentItem.text(1)
+          pathname = os.path.join(directory, filename)
         sourceCodeDisplayWidget.updateDisplay(pathname, 0)
     self.currentItemChanged.connect(currentItemChanged)
-    
+
     self.setFilter("")
 
   def setFilter(self, text):
@@ -854,21 +971,32 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
       process = target.GetProcess()
       if process and process.IsValid():
         count = target.GetNumModules()
-    
+
     self.clear()
-    for i in range(0, count):
-      module = target.GetModuleAtIndex(i)
-      compileUnitCount = module.GetNumCompileUnits()
-      for j in range(0, compileUnitCount):
-        compileUnit = module.GetCompileUnitAtIndex(j)
-        fileSpec = compileUnit.GetFileSpec()
-        filename = fileSpec.GetFilename()
-        directory = fileSpec.GetDirectory()
-        if len(self.__filter) == 0 or self.__filter in filename or self.__filter in directory:
+    if config['onlyShowKLCode']:
+      for filename in fabricSourceCode:
+        if len(self.__filter) == 0 \
+            or (filename is not None and self.__filter in filename):
           tableWidgetItem = QtGui.QTreeWidgetItem()
           tableWidgetItem.setText(0, filename)
-          tableWidgetItem.setText(1, directory)
+          tableWidgetItem.setText(1, '')
           self.addTopLevelItem(tableWidgetItem)
+    else:
+      for i in range(0, count):
+        module = target.GetModuleAtIndex(i)
+        compileUnitCount = module.GetNumCompileUnits()
+        for j in range(0, compileUnitCount):
+          compileUnit = module.GetCompileUnitAtIndex(j)
+          fileSpec = compileUnit.GetFileSpec()
+          filename = fileSpec.GetFilename()
+          directory = fileSpec.GetDirectory()
+          if len(self.__filter) == 0 \
+              or (filename is not None and self.__filter in filename) \
+              or (directory is not None and self.__filter in directory):
+            tableWidgetItem = QtGui.QTreeWidgetItem()
+            tableWidgetItem.setText(0, filename)
+            tableWidgetItem.setText(1, directory)
+            self.addTopLevelItem(tableWidgetItem)
     self.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
 sourcesResultsWidget = SourcesResultsWidget()
@@ -903,14 +1031,14 @@ lldbDisplay = LLDBDisplay()
 class LLDBCommandWidget(QtGui.QLineEdit):
   def __init__(self, commandInterpreter, lldbDisplay):
     QtGui.QLineEdit.__init__(self)
-    
+
     self.__commandInterpreter = commandInterpreter
     self.__lldbDisplay = lldbDisplay
     self.__history = []
     self.__historyPos = 0
-    
+
     self.setFont(font)
-    
+
     def returnPressedCallback():
       command = str(self.text())
       self.clear()
@@ -918,7 +1046,7 @@ class LLDBCommandWidget(QtGui.QLineEdit):
         command = self.__history[len(self.__history)-1]
       self.executeCommand(command)
     self.returnPressed.connect(returnPressedCallback)
-  
+
   def event(self, event):
     if event.type() == QtCore.QEvent.Type.KeyPress:
       key = event.key()
@@ -947,7 +1075,7 @@ class LLDBCommandWidget(QtGui.QLineEdit):
           self.selectAll()
           return True
     return QtGui.QLineEdit.event(self, event)
-  
+
   def executeCommand(self, command):
     lldbDisplay.appendCommand(command)
     return_obj = lldb.SBCommandReturnObject()
@@ -975,6 +1103,83 @@ lldbLayout.addLayout(lldbCommandLayout)
 
 lldbWidget = QtGui.QWidget()
 lldbWidget.setLayout(lldbLayout)
+
+class BreakpointsWidget(QtGui.QTreeWidget):
+  class BP(object):
+    def __init__(self, file, line):
+      self.file = file
+      self.line = line
+    def __eq__(a, b):
+      return a.file == b.file and a.line == b.line
+
+  def __init__(self, sourceCodeDisplay):
+    QtGui.QTreeWidget.__init__(self)
+
+    self.__breakpoints = {}
+    self.__sourceCodeDisplayWidget = sourceCodeDisplay
+
+    self.setIndentation(12)
+    self.setHeaderLabels([
+      "ID",
+      "Description",
+    ])
+
+    settings.beginGroup("BreakpointsWidget")
+    self.setColumnWidth(0, int(settings.value("firstColumnWidth", 100)))
+    self.setColumnWidth(1, int(settings.value("secondColumnWidth", 300)))
+    settings.endGroup()
+
+    def itemWasClicked(item, column):
+      bpid = int(item.text(0))
+      # [andrew 20140123] applies for internal breakpoints, which we will hide next version
+      if not self.__breakpoints.has_key(bpid):
+        return
+      bp = self.__breakpoints[bpid]
+      self.__sourceCodeDisplayWidget.updateDisplay(bp.file, 0)
+      self.markBreakpoints()
+    self.itemClicked.connect(itemWasClicked)
+
+  def hideEvent(self, event):
+    settings.beginGroup("BreakpointsWidget")
+    settings.setValue("firstColumnWidth", self.columnWidth(0))
+    settings.endGroup()
+    QtGui.QTreeWidget.hideEvent(self, event)
+
+  def toggleBreakpoint(self, filename, lineNum):
+    # [andrew 20140123] FIXME incorrectly assume unique filenames
+    filename = os.path.basename(filename)
+    newvalue = BreakpointsWidget.BP(filename, lineNum)
+    if newvalue not in self.__breakpoints.values():
+      bp = debugger.GetSelectedTarget().BreakpointCreateByLocation(str(filename), int(lineNum))
+      self.__breakpoints[bp.id] = newvalue
+    else:
+      for bpid, bpvalue in self.__breakpoints.iteritems():
+        if newvalue == bpvalue:
+          debugger.GetSelectedTarget().BreakpointDelete(bpid)
+          del self.__breakpoints[bpid]
+          break
+    self.updateBreakpoints()
+
+  def updateBreakpoints(self):
+    self.clear()
+    for bp in debugger.GetSelectedTarget().breakpoint_iter():
+      item = QtGui.QTreeWidgetItem()
+      item.setText(0, str(bp.id))
+      item.setText(1, str(bp))
+      self.addTopLevelItem(item)
+    self.markBreakpoints()
+
+  def markBreakpoints(self):
+    lines = []
+    # [andrew 20140123] FIXME incorrectly assume unique filenames
+    currentFile = os.path.basename(self.__sourceCodeDisplayWidget.pathname)
+    for bpid, value in self.__breakpoints.iteritems():
+      if value.file == currentFile:
+        lines.append(value.line-1)
+    self.__sourceCodeDisplayWidget.markBreakpointLines(lines)
+
+breakpointsWidget = BreakpointsWidget(sourceCodeDisplayWidget)
+sourceCodeDisplayWidget.setBreakpointsWidget(breakpointsWidget)
 
 stackWidget_dockWidget = QtGui.QDockWidget()
 stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1021,15 +1226,20 @@ sourcesWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.Q
 sourcesWidget_dockWidget.setWindowTitle("Sources")
 sourcesWidget_dockWidget.setWidget(sourcesWidget)
 
+breakpointsWidget_dockWidget = QtGui.QDockWidget()
+breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+breakpointsWidget_dockWidget.setWindowTitle("Breakpoints")
+breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
+
 class MainWindow(QtGui.QMainWindow):
-  def __init__(self, executable):
+  def __init__(self, name):
     QtGui.QMainWindow.__init__(self)
-    
+
     def handler(signum, frame):
       signal.signal(signum, signal.SIG_DFL)
       self.close()
     signal.signal(signal.SIGINT, handler)
-    
+
     settings.beginGroup("MainWindow")
     self.resize(settings.value("size", QtCore.QSize(800, 600)))
     self.move(settings.value("pos", QtCore.QPoint(200, 200)))
@@ -1037,7 +1247,10 @@ class MainWindow(QtGui.QMainWindow):
       self.showMaximized()
     settings.endGroup()
 
-    title = "%s: %s" % (app.applicationName(), executable)
+    self.setTitle(name)
+
+  def setTitle(self, name):
+    title = "%s: %s" % (app.applicationName(), name)
     self.setWindowTitle(title)
 
   def closeEvent(self, event):
@@ -1091,7 +1304,7 @@ actions.append(stepOutAction)
 def updateToolbarItems():
   for action in actions:
     action.setEnabled(False)
-  
+
   target = debugger.GetSelectedTarget()
   if target and target.IsValid():
     process = target.GetProcess()
@@ -1106,17 +1319,19 @@ def updateToolbarItems():
     else:
       startAction.setEnabled(True)
 
-mainWindow = MainWindow(executable)
+mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
 mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
+mainWindow.tabifyDockWidget(localsWidget_dockWidget, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyDisplayWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
+mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, threadsWidget_dockWidget)
+mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, disassemblyDisplayWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
+mainWindow.tabifyDockWidget(outputWidget_dockWidget, breakpointsWidget_dockWidget)
+outputWidget_dockWidget.setMinimumWidth(640)
 mainWindow.show()
 
 def handleDebuggerEvents():
@@ -1124,15 +1339,15 @@ def handleDebuggerEvents():
   eventCount = 0
   while debugger.GetListener().GetNextEvent(event):
     eventCount += 1
-    
+
     # stream = lldb.SBStream()
     # event.GetDescription(stream)
     # print stream.GetData()
-    
+
     if event.GetBroadcaster().GetName() == "lldb.process":
       target = debugger.GetSelectedTarget()
       process = target.GetProcess()
-      
+
       process_stdout = process.GetSTDOUT(1024)
       if process_stdout:
         outputWidget.appendStdout(process_stdout)
@@ -1145,7 +1360,7 @@ def handleDebuggerEvents():
         while process_stderr:
           process_stderr = process.GetSTDERR(1024)
           outputWidget.appendStderr(process_stderr)
-      
+
       state = lldb.SBProcess.GetStateFromEvent(event)
       if state == lldb.eStateInvalid:
         # Not a state event
@@ -1157,7 +1372,7 @@ def handleDebuggerEvents():
             frame = thread.GetFrameAtIndex(0)
             shouldSelectThread = False
             shouldDisplay = False
-            
+
             stopReason = thread.GetStopReason()
             # if self.verbose:
             #   desc = "tid = %#x pc = %#x " % (thread.GetThreadID(),frame.GetPC()),
@@ -1186,7 +1401,7 @@ def handleDebuggerEvents():
             elif stopReason == lldb.eStopReasonSignal:
               shouldSelectThread = True
               shouldDisplay = True
-            
+
             if shouldDisplay:
               lldbDisplay.appendDebuggerOutput("STOP %s\n" % thread.GetStopDescription(256))
 
@@ -1225,15 +1440,131 @@ timer.timeout.connect(handleDebuggerEvents)
 timer.start(100)
 
 lldbDisplay.appendDebuggerOutput("Welcome to zBug version %s!\n" % app.applicationVersion())
-lldbCommandWidget.executeCommand(
-  "target create \"%s\"" % executable
-  )
-if len(arguments) > 0:
+
+# [andrew 20140124] for LLDB's own logging messages, enabling different types of these
+# is done via the console using "log enable <type> <subtype/all>"
+def logToStdout(msg):
+  sys.stdout.write(msg)
+  sys.stdout.flush()
+debugger.SetLoggingCallback(logToStdout)
+
+fabricSocket = None
+if config['connectFabric']:
+  lldbDisplay.appendDebuggerOutput("Waiting to connect to Fabric Engine process...\n")
+
+  # [andrew 20140314] don't auto-connect if there are arguments passed
+  if len(arguments) < 1:
+    pidpath = os.environ['HOME']+'/.fabric-engine/.private/fabric.pid'
+    try:
+      pid = open(pidpath).read()
+      os.kill(int(pid), 0)
+      options.pid = pid
+      print "Found existing Fabric Engine process "+str(pid)
+    except Exception as e:
+      pass
+
+  class FabricSocket(object):
+    def __init__(self):
+      self.pending = ''
+      self.messages = []
+      self.connected = False
+      self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      self.update()
+
+    def update(self, timeout=0):
+      # FIXME this needs to triggered on attach/launch
+      if not self.connected:
+        try:
+          self.sock.connect(('127.0.0.1', 3132))
+          self.connected = True
+          lldbDisplay.appendDebuggerOutput("Connected to Fabric Engine process\n")
+        except Exception:
+          return
+      (r,w,x) = select.select([self.sock.fileno()], [], [], timeout)
+      didRead = False
+      if len(r) > 0:
+        self.handleMessage(self.readMessage())
+        didRead = True
+      while len(self.messages) > 0:
+        self.handleMessage(self.readMessage())
+        didRead = True
+      return didRead
+
+    def readMessage(self):
+      if len(self.messages) > 0:
+        return json.loads(self.messages.pop(0))
+      while self.pending.find('\n') == -1:
+        self.pending += self.sock.recv(20*1024)
+      self.messages = self.pending.split('\n')
+      self.pending = self.messages.pop()
+      return json.loads(self.messages.pop(0))
+
+    def handleMessage(self, data):
+      global fabricSourceCode
+      if data['cmd'] != 'SourceCode':
+        raise Exception('unexpected message from Fabric: '+str(data['cmd']))
+      if 'filename' in data['data']:
+        filename = data['data']['filename']
+        source = data['data']['sourceCode']
+        remove = data['data']['remove']
+        # [andrew 20140123] FIXME incorrectly assume unique filenames
+        if remove == 1:
+          del fabricSourceCode[os.path.basename(filename)]
+        else:
+          fabricSourceCode[os.path.basename(filename)] = source
+
+  fabricSocket = FabricSocket()
+  # [andrew 20140306] read all available data
+  while fabricSocket.update(0.5):
+    pass
+  fabricSocket.timer = QtCore.QTimer()
+  fabricSocket.timer.timeout.connect(fabricSocket.update)
+  fabricSocket.timer.start(100)
+
+if options.pid is not None:
   lldbCommandWidget.executeCommand(
-    "settings set -- target.run-args %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments)))
+    "process attach --pid=%s" % options.pid
     )
+  threadsWidget.updateDisplay()
+  sourcesResultsWidget.updateDisplay()
+  updateToolbarItems()
+else:
+  if len(arguments) < 1:
+    parser.print_help()
+    sys.exit(1)
+
+  # Search PATH for executable
+  def resolveExecutable(executable):
+    try:
+      if stat.S_ISREG(os.stat(executable).st_mode):
+        return executable
+    except Exception:
+      pass
+
+    pathDirs = os.environ['PATH'].split(":")
+    for pathDir in pathDirs:
+      pathedExecutable = os.path.join(pathDir, executable)
+      try:
+        if stat.S_ISREG(os.stat(pathedExecutable).st_mode):
+          return pathedExecutable
+      except Exception:
+        pass
+
+    print "Unable to find executable '%s'" % executable
+    sys.exit(1)
+  executable = resolveExecutable(arguments[0])
+
+  lldbCommandWidget.executeCommand(
+    "target create \"%s\"" % executable
+    )
+  if len(arguments) > 1:
+    lldbCommandWidget.executeCommand(
+      "settings set -- target.run-args %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments[1:])))
+      )
 lldbCommandWidget.setFocus()
 
 updateToolbarItems()
 
-sys.exit(app.exec_())
+code = app.exec_()
+fabricSocket = None
+sys.exit(code)
