@@ -60,7 +60,7 @@ debugger.SetAsync(True)
 app = QtGui.QApplication([])
 app.setOrganizationName("zBug")
 app.setApplicationName("zBug")
-app.setApplicationVersion("1.11.4")
+app.setApplicationVersion("1.1")
 
 settings = QtCore.QSettings()
 
