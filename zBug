@@ -11,7 +11,7 @@ config = {
   'connectFabric': True,
 
   # do some limited client-side interpretation for Fabric types
-  'interpretFabricTypes': True,
+  'interpretFabriregTypes': True,
 }
 
 # must use optparse over argparse to support python 2.6
@@ -466,7 +466,7 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
 
     showChildren = True
     extraChildren = []
-    if typeName is not None and config['interpretFabricTypes']:
+    if typeName is not None and config['interpretFabriregTypes']:
       if typeName == 'String':
         flags = value.GetChildMemberWithName('indFlagAndLength')
         u = value.GetChildMemberWithName('u')
@@ -950,13 +950,13 @@ class SourcesWidget(NoFocusWidget):
       settings.setValue("sources/filter", self.text())
       QtGui.QLineEdit.hideEvent(self, event)
 
-  class KLOnlyWidget(QtGui.QCheckBox):
+  class KLTypeWidget(QtGui.QCheckBox):
     def __init__(self):
-      QtGui.QCheckBox.__init__(self, "Only KL Sources")
+      QtGui.QCheckBox.__init__(self, "KL")
 
     def showEvent(self, event):
       QtGui.QCheckBox.showEvent(self, event)
-      checked = settings.value("sources/klOnly", False)
+      checked = settings.value("sources/types/kl", False)
       if checked:
         self.setCheckState(QtCore.Qt.Checked)
       else:
@@ -964,15 +964,33 @@ class SourcesWidget(NoFocusWidget):
 
     def hideEvent(self, event):
       checked = self.checkState() == QtCore.Qt.Checked
-      settings.setValue("sources/klOnly", checked)
+      settings.setValue("sources/types/kl", checked)
+      QtGui.QCheckBox.hideEvent(self, event)
+
+  class RegTypeWidget(QtGui.QCheckBox):
+    def __init__(self):
+      QtGui.QCheckBox.__init__(self, "Regular")
+
+    def showEvent(self, event):
+      QtGui.QCheckBox.showEvent(self, event)
+      checked = settings.value("sources/types/reg", False)
+      if checked:
+        self.setCheckState(QtCore.Qt.Checked)
+      else:
+        self.setCheckState(QtCore.Qt.Unchecked)
+
+    def hideEvent(self, event):
+      checked = self.checkState() == QtCore.Qt.Checked
+      settings.setValue("sources/types/reg", checked)
       QtGui.QCheckBox.hideEvent(self, event)
 
   class ResultsWidget(TreeWidget):
-    def __init__(self, filterWidget, klOnlyWidget):
+    def __init__(self, filterWidget, regTypeWidget, klTypeWidget):
       TreeWidget.__init__(self, "sources")
 
       self.__filterWidget = filterWidget;
-      self.__klOnlyWidget = klOnlyWidget;
+      self.__regTypeWidget = regTypeWidget;
+      self.__klTypeWidget = klTypeWidget;
 
       self.setIndentation(0)
 
@@ -995,7 +1013,8 @@ class SourcesWidget(NoFocusWidget):
 
     def updateDisplay(self):
       filterText = self.__filterWidget.text().strip()
-      klOnly = self.__klOnlyWidget.isChecked()
+      regType = self.__regTypeWidget.isChecked()
+      klType = self.__klTypeWidget.isChecked()
 
       count = 0
       target = debugger.GetSelectedTarget()
@@ -1003,7 +1022,7 @@ class SourcesWidget(NoFocusWidget):
         count = target.GetNumModules()
 
       self.clear()
-      if klOnly:
+      if klType:
         for filename in fabricSourceCode:
           if len(filterText) == 0 \
               or (filename is not None and filterText in filename):
@@ -1011,7 +1030,7 @@ class SourcesWidget(NoFocusWidget):
             tableWidgetItem.setText(0, filename)
             tableWidgetItem.setText(1, '')
             self.addTopLevelItem(tableWidgetItem)
-      else:
+      if regType:
         for i in range(0, count):
           module = target.GetModuleAtIndex(i)
           compileUnitCount = module.GetNumCompileUnits()
@@ -1034,18 +1053,25 @@ class SourcesWidget(NoFocusWidget):
   def __init__(self):
     NoFocusWidget.__init__(self)
 
+    regTypeWidget = self.RegTypeWidget()
+    klTypeWidget = self.KLTypeWidget()
+    typeLayout = QtGui.QHBoxLayout()
+    typeLayout.addWidget(QtGui.QLabel("Source types:"))
+    typeLayout.addWidget(regTypeWidget)
+    typeLayout.addWidget(klTypeWidget)
+
     filterWidget = self.FilterWidget()
-    klOnlyWidget = self.KLOnlyWidget()
 
     filterLayout = QtGui.QGridLayout()
     filterLayout.addWidget(QtGui.QLabel("Filter:"), 0, 0)
     filterLayout.addWidget(filterWidget, 0, 1)
-    filterLayout.addWidget(klOnlyWidget, 1, 1)
+    filterLayout.addLayout(typeLayout, 1, 1)
 
-    resultsWidget = self.ResultsWidget(filterWidget, klOnlyWidget)
+    resultsWidget = self.ResultsWidget(filterWidget, regTypeWidget, klTypeWidget)
     resultsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
     filterWidget.filterChanged.connect(resultsWidget.updateDisplay)
-    klOnlyWidget.stateChanged.connect(resultsWidget.updateDisplay)
+    regTypeWidget.stateChanged.connect(resultsWidget.updateDisplay)
+    klTypeWidget.stateChanged.connect(resultsWidget.updateDisplay)
 
     layout = QtGui.QVBoxLayout()
     layout.addLayout(filterLayout)
@@ -1531,7 +1557,8 @@ if config['connectFabric']:
           self.sock.connect(('127.0.0.1', 3132))
           self.connected = True
           lldbDisplay.appendDebuggerOutput("Connected to Fabric Engine process\n")
-        except Exception:
+        except Exception as e:
+          # lldbDisplay.appendDebuggerOutput("Failed to connect to Fabric Engine process: %s\n" % str(e))
           return
       (r,w,x) = select.select([self.sock.fileno()], [], [], timeout)
       didRead = False
