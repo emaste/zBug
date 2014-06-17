@@ -1080,11 +1080,11 @@ class LLDBDisplay(AppendingTextWidget):
 
 class BreakpointsWidget(TreeWidget):
   class BP(object):
-    def __init__(self, file, line):
-      self.file = file
+    def __init__(self, pathname, line):
+      self.pathname = pathname
       self.line = line
     def __eq__(a, b):
-      return a.file == b.file and a.line == b.line
+      return a.pathname == b.pathname and a.line == b.line
 
   def __init__(self, sourceCodeDisplay):
     TreeWidget.__init__(self, "breakpoints")
@@ -1104,16 +1104,15 @@ class BreakpointsWidget(TreeWidget):
       if not self.__breakpoints.has_key(bpid):
         return
       bp = self.__breakpoints[bpid]
-      self.__sourceCodeDisplayWidget.updateDisplay(bp.file, 0)
+      self.__sourceCodeDisplayWidget.updateDisplay(bp.pathname, bp.line)
       self.markBreakpoints()
     self.itemClicked.connect(itemWasClicked)
 
-  def toggleBreakpoint(self, filename, lineNum):
-    # [andrew 20140123] FIXME incorrectly assume unique filenames
-    filename = os.path.basename(filename)
-    newvalue = BreakpointsWidget.BP(filename, lineNum)
+  def toggleBreakpoint(self, pathname, lineNum):
+    # [andrew 20140123] FIXME incorrectly assume unique pathnames
+    newvalue = BreakpointsWidget.BP(pathname, lineNum)
     if newvalue not in self.__breakpoints.values():
-      bp = debugger.GetSelectedTarget().BreakpointCreateByLocation(str(filename), int(lineNum))
+      bp = debugger.GetSelectedTarget().BreakpointCreateByLocation(str(pathname), int(lineNum))
       self.__breakpoints[bp.id] = newvalue
     else:
       for bpid, bpvalue in self.__breakpoints.iteritems():
@@ -1135,10 +1134,10 @@ class BreakpointsWidget(TreeWidget):
   def markBreakpoints(self):
     lines = []
     # [andrew 20140123] FIXME incorrectly assume unique filenames
-    currentFile = os.path.basename(self.__sourceCodeDisplayWidget.pathname)
-    for bpid, value in self.__breakpoints.iteritems():
-      if value.file == currentFile:
-        lines.append(value.line-1)
+    currentPathname = self.__sourceCodeDisplayWidget.pathname
+    for bpid, bp in self.__breakpoints.iteritems():
+      if bp.pathname == currentPathname:
+        lines.append(bp.line-1)
     self.__sourceCodeDisplayWidget.markBreakpointLines(lines)
 
 breakpointsWidget = BreakpointsWidget(sourceCodeDisplayWidget)
