@@ -590,13 +590,6 @@ class LocalsWidget(QtGui.QTreeWidget):
       item.hasChanged()
     self.itemChanged.connect(itemHasChanged)
 
-  def hideEvent(self, event):
-    settings.beginGroup("LocalsWidget")
-    settings.setValue("firstColumnWidth", self.columnWidth(0))
-    settings.setValue("secondColumnWidth", self.columnWidth(1))
-    settings.endGroup()
-    QtGui.QTreeWidget.hideEvent(self, event)
-
   def setFrame(self, frame):
     enabled = False
 
@@ -919,6 +912,7 @@ class OutputWidget(AppendingTextWidget):
 
 outputWidget = OutputWidget()
 outputWidget.setFocusPolicy(QtCore.Qt.NoFocus)
+outputWidget.setMinimumWidth(640)
 
 class SourcesFilterWidget(QtGui.QLineEdit):
   filterChanged = QtCore.Signal(basestring)
@@ -1190,80 +1184,6 @@ lldbCommandLayout.setSpacing(4)
 lldbCommandLayout.addWidget(QtGui.QLabel("lldb:"))
 lldbCommandLayout.addWidget(lldbCommandWidget)
 
-stackWidget_dockWidget = QtGui.QDockWidget()
-stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-stackWidget_dockWidget.setWindowTitle("Stack")
-stackWidget_dockWidget.setWidget(stackWidget)
-
-threadsWidget_dockWidget = QtGui.QDockWidget()
-threadsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-threadsWidget_dockWidget.setWindowTitle("Threads")
-threadsWidget_dockWidget.setWidget(threadsWidget)
-
-# sourceCodeDisplayWidget_dockWidget = QtGui.QDockWidget()
-# sourceCodeDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-# sourceCodeDisplayWidget_dockWidget.setWindowTitle("Source Code")
-# sourceCodeDisplayWidget_dockWidget.setWidget(sourceCodeDisplayWidget)
-
-disassemblyDisplayWidget_dockWidget = QtGui.QDockWidget()
-disassemblyDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-disassemblyDisplayWidget_dockWidget.setWindowTitle("Disassembly")
-disassemblyDisplayWidget_dockWidget.setWidget(disassemblyDisplayWidget)
-
-localsWidget_dockWidget = QtGui.QDockWidget()
-localsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-localsWidget_dockWidget.setWindowTitle("Locals")
-localsWidget_dockWidget.setWidget(localsWidget)
-
-registersWidget_dockWidget = QtGui.QDockWidget()
-registersWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-registersWidget_dockWidget.setWindowTitle("Registers")
-registersWidget_dockWidget.setWidget(registersWidget)
-
-outputWidget_dockWidget = QtGui.QDockWidget()
-outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-outputWidget_dockWidget.setWindowTitle("Output")
-outputWidget_dockWidget.setWidget(outputWidget)
-
-sourcesWidget_dockWidget = QtGui.QDockWidget()
-sourcesWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-sourcesWidget_dockWidget.setWindowTitle("Sources")
-sourcesWidget_dockWidget.setWidget(sourcesWidget)
-
-breakpointsWidget_dockWidget = QtGui.QDockWidget()
-breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-breakpointsWidget_dockWidget.setWindowTitle("Breakpoints")
-breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
-
-class MainWindow(QtGui.QMainWindow):
-  def __init__(self, name):
-    QtGui.QMainWindow.__init__(self)
-
-    def handler(signum, frame):
-      signal.signal(signum, signal.SIG_DFL)
-      self.close()
-    signal.signal(signal.SIGINT, handler)
-
-    settings.beginGroup("MainWindow")
-    self.resize(settings.value("size", QtCore.QSize(800, 600)))
-    self.move(settings.value("pos", QtCore.QPoint(200, 200)))
-    if settings.value("isMaximized", self.isMaximized()):
-      self.showMaximized()
-    settings.endGroup()
-
-    self.setTitle(name)
-
-  def setTitle(self, name):
-    title = "%s: %s" % (app.applicationName(), name)
-    self.setWindowTitle(title)
-
-  def closeEvent(self, event):
-    settings.beginGroup("MainWindow")
-    settings.setValue("size", self.size())
-    settings.setValue("pos", self.pos())
-    settings.setValue("isMaximized", self.isMaximized())
-    settings.endGroup()
-
 toolBar = QtGui.QToolBar()
 actions = []
 
@@ -1340,23 +1260,106 @@ lldbLayout.addLayout(lldbCommandLayout)
 lldbWidget = QtGui.QWidget()
 lldbWidget.setLayout(lldbLayout)
 
-lldbWidget_dockWidget = QtGui.QDockWidget()
-lldbWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-lldbWidget_dockWidget.setWindowTitle("LLDB")
-lldbWidget_dockWidget.setWidget(lldbWidget)
+class MainWindow(QtGui.QMainWindow):
+  def __init__(self, name):
+    QtGui.QMainWindow.__init__(self)
+
+    def handler(signum, frame):
+      signal.signal(signum, signal.SIG_DFL)
+      self.close()
+    signal.signal(signal.SIGINT, handler)
+    
+    self.restoreGeometry(settings.value("mainWindow/geometry"))
+
+    self.setTabPosition(QtCore.Qt.AllDockWidgetAreas, QtGui.QTabWidget.South)
+    self.setCentralWidget(sourceCodeDisplayWidget)
+
+    localsWidget_dockWidget = QtGui.QDockWidget()
+    localsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    localsWidget_dockWidget.setObjectName("Locals")
+    localsWidget_dockWidget.setWindowTitle("Locals")
+    localsWidget_dockWidget.setWidget(localsWidget)
+    self.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
+
+    registersWidget_dockWidget = QtGui.QDockWidget()
+    registersWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    registersWidget_dockWidget.setObjectName("Registers")
+    registersWidget_dockWidget.setWindowTitle("Registers")
+    registersWidget_dockWidget.setWidget(registersWidget)
+    self.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
+
+    stackWidget_dockWidget = QtGui.QDockWidget()
+    stackWidget_dockWidget.setObjectName("Stack")
+    stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    stackWidget_dockWidget.setWindowTitle("Stack")
+    stackWidget_dockWidget.setWidget(stackWidget)
+    self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
+
+    threadsWidget_dockWidget = QtGui.QDockWidget()
+    threadsWidget_dockWidget.setObjectName("Threads")
+    threadsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    threadsWidget_dockWidget.setWindowTitle("Threads")
+    threadsWidget_dockWidget.setWidget(threadsWidget)
+    self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
+
+    sourcesWidget_dockWidget = QtGui.QDockWidget()
+    sourcesWidget_dockWidget.setObjectName("Sources")
+    sourcesWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    sourcesWidget_dockWidget.setWindowTitle("Sources")
+    sourcesWidget_dockWidget.setWidget(sourcesWidget)
+    self.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
+
+    disassemblyDisplayWidget_dockWidget = QtGui.QDockWidget()
+    disassemblyDisplayWidget_dockWidget.setObjectName("Disassembly")
+    disassemblyDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    disassemblyDisplayWidget_dockWidget.setWindowTitle("Disassembly")
+    disassemblyDisplayWidget_dockWidget.setWidget(disassemblyDisplayWidget)
+    self.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyDisplayWidget_dockWidget)
+
+    lldbWidget_dockWidget = QtGui.QDockWidget()
+    lldbWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    lldbWidget_dockWidget.setWindowTitle("LLDB")
+    lldbWidget_dockWidget.setObjectName("LLDB")
+    lldbWidget_dockWidget.setWidget(lldbWidget)
+    self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
+
+    outputWidget_dockWidget = QtGui.QDockWidget()
+    outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    outputWidget_dockWidget.setObjectName("Output")
+    outputWidget_dockWidget.setWindowTitle("Output")
+    outputWidget_dockWidget.setWidget(outputWidget)
+    self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
+
+    breakpointsWidget_dockWidget = QtGui.QDockWidget()
+    breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    breakpointsWidget_dockWidget.setObjectName("Breakpoints")
+    breakpointsWidget_dockWidget.setWindowTitle("Breakpoints")
+    breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
+    self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, breakpointsWidget_dockWidget)
+
+    self.restoreState(settings.value("mainWindow/state"))
+    localsWidget.header().restoreState(settings.value("locals/state"))
+    registersWidget.header().restoreState(settings.value("registers/state"))
+    stackWidget.header().restoreState(settings.value("stack/state"))
+    threadsWidget.header().restoreState(settings.value("threads/state"))
+    breakpointsWidget.header().restoreState(settings.value("breakpoints/state"))
+
+    self.setTitle(name)
+
+  def setTitle(self, name):
+    title = "%s: %s" % (app.applicationName(), name)
+    self.setWindowTitle(title)
+
+  def closeEvent(self, event):
+    settings.setValue("breakpoints/state", breakpointsWidget.header().saveState())
+    settings.setValue("threads/state", threadsWidget.header().saveState())
+    settings.setValue("stack/state", stackWidget.header().saveState())
+    settings.setValue("registers/state", registersWidget.header().saveState())
+    settings.setValue("locals/state", localsWidget.header().saveState())
+    settings.setValue("mainWindow/state", self.saveState())
+    settings.setValue("mainWindow/geometry", self.saveGeometry())
 
 mainWindow = MainWindow('Debugger')
-mainWindow.setCentralWidget(sourceCodeDisplayWidget)
-mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
-mainWindow.tabifyDockWidget(localsWidget_dockWidget, registersWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
-mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, threadsWidget_dockWidget)
-mainWindow.tabifyDockWidget(sourcesWidget_dockWidget, disassemblyDisplayWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
-mainWindow.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
-mainWindow.tabifyDockWidget(outputWidget_dockWidget, breakpointsWidget_dockWidget)
-outputWidget_dockWidget.setMinimumWidth(640)
 mainWindow.show()
 
 def handleDebuggerEvents():
