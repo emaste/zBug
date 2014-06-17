@@ -4,6 +4,8 @@ import sys, os, platform, commands, stat, signal, optparse
 import json, select, socket
 from PySide import QtCore, QtGui
 
+zBugPath = os.path.dirname(os.path.realpath(sys.argv[0]))
+
 config = {
   # assume that we're debugging a Fabric app and try to connect
   'connectFabric': True,
@@ -1263,13 +1265,19 @@ class MainWindow(QtGui.QMainWindow):
 toolBar = QtGui.QToolBar()
 actions = []
 
-startAction = toolBar.addAction("Start")
+startAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "start.png")), "Start")
 def startCallback():
   lldbCommandWidget.executeCommand("process launch")
 startAction.triggered.connect(startCallback)
 actions.append(startAction)
 
-interruptAction = toolBar.addAction("Interrupt")
+restartAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "restart.png")), "Restart")
+def restartCallback():
+  lldbCommandWidget.executeCommand("process launch")
+restartAction.triggered.connect(restartCallback)
+actions.append(restartAction)
+
+interruptAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "pause.png")), "Interrupt")
 def interruptCallback():
   lldbCommandWidget.executeCommand("process interrupt")
 interruptAction.triggered.connect(interruptCallback)
@@ -1277,25 +1285,25 @@ actions.append(interruptAction)
 
 toolBar.addSeparator()
 
-continueAction = toolBar.addAction("Continue")
+continueAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "continue.png")), "Continue")
 def continueCallback():
   lldbCommandWidget.executeCommand("process continue")
 continueAction.triggered.connect(continueCallback)
 actions.append(continueAction)
 
-stepInAction = toolBar.addAction("Step In")
+stepInAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "step-in.png")), "Step In")
 def stepInCallback():
   lldbCommandWidget.executeCommand("thread step-in")
 stepInAction.triggered.connect(stepInCallback)
 actions.append(stepInAction)
 
-stepOverAction = toolBar.addAction("Step Over")
+stepOverAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "step-over.png")), "Step Over")
 def stepOverCallback():
   lldbCommandWidget.executeCommand("thread step-over")
 stepOverAction.triggered.connect(stepOverCallback)
 actions.append(stepOverAction)
 
-stepOutAction = toolBar.addAction("Step Out")
+stepOutAction = toolBar.addAction(QtGui.QIcon(os.path.join(zBugPath, "rsrc", "step-out.png")), "Step Out")
 def stepOutCallback():
   lldbCommandWidget.executeCommand("thread step-out")
 stepOutAction.triggered.connect(stepOutCallback)
@@ -1305,13 +1313,12 @@ def updateToolbarItems():
   for action in actions:
     action.setEnabled(False)
 
-  startAction.setEnabled(True)
   target = debugger.GetSelectedTarget()
   if target and target.IsValid():
     process = target.GetProcess()
     if process and process.IsValid() and process.GetState() != lldb.eStateExited:
       if process.GetState() == lldb.eStateStopped:
-        startAction.setText("Restart")
+        restartAction.setEnabled(True)
         continueAction.setEnabled(True)
         stepInAction.setEnabled(True)
         stepOverAction.setEnabled(True)
@@ -1319,7 +1326,7 @@ def updateToolbarItems():
       else:
         interruptAction.setEnabled(True)
     else:
-      startAction.setText("Start")
+      startAction.setEnabled(True)
 
 mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
