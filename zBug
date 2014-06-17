@@ -10,9 +10,6 @@ config = {
   # assume that we're debugging a Fabric app and try to connect
   'connectFabric': True,
 
-  # only show KL code in the source code list
-  'onlyShowKLCode': True,
-
   # do some limited client-side interpretation for Fabric types
   'interpretFabricTypes': True,
 }
@@ -553,9 +550,23 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
        
       self.treeWidget().expandItem(self)
 
-class LocalsWidget(QtGui.QTreeWidget):
-  def __init__(self):
+class TreeWidget(QtGui.QTreeWidget):
+  def __init__(self, settingsName):
     QtGui.QTreeWidget.__init__(self)
+
+    self.__settingsName = settingsName
+
+  def showEvent(self, event):
+    QtGui.QTreeWidget.showEvent(self, event)
+    self.header().restoreState(settings.value("%s/state" % self.__settingsName))
+
+  def hideEvent(self, event):
+    settings.setValue("%s/state" % self.__settingsName, self.header().saveState())
+    QtGui.QTreeWidget.hideEvent(self, event)
+
+class LocalsWidget(TreeWidget):
+  def __init__(self):
+    TreeWidget.__init__(self, "locals")
 
     self.__topLevelItems = {}
 
@@ -567,11 +578,6 @@ class LocalsWidget(QtGui.QTreeWidget):
       "Details",
       "Type"
     ])
-
-    settings.beginGroup("LocalsWidget")
-    self.setColumnWidth(0, int(settings.value("firstColumnWidth", 120)))
-    self.setColumnWidth(1, int(settings.value("secondColumnWidth", 200)))
-    settings.endGroup()
 
     def itemExpanded(item):
       item.wasExpanded()
@@ -629,9 +635,9 @@ class LocalsWidget(QtGui.QTreeWidget):
 localsWidget = LocalsWidget()
 localsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
-class RegistersWidget(QtGui.QTreeWidget):
+class RegistersWidget(TreeWidget):
   def __init__(self):
-    QtGui.QTreeWidget.__init__(self)
+    TreeWidget.__init__(self, "registers")
 
     self.__topLevelItems = {}
 
@@ -657,7 +663,7 @@ class RegistersWidget(QtGui.QTreeWidget):
     settings.beginGroup("RegistersWidget")
     settings.setValue("firstColumnWidth", self.columnWidth(0))
     settings.endGroup()
-    QtGui.QTreeWidget.hideEvent(self, event)
+    TreeWidget.hideEvent(self, event)
 
   def setFrame(self, frame):
     enabled = False
@@ -706,7 +712,7 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
   def frame(self):
     return self.__frame
 
-class StackWidget(QtGui.QTreeWidget):
+class StackWidget(TreeWidget):
   def __init__(
     self,
     sourceCodeDisplayWidget,
@@ -714,7 +720,7 @@ class StackWidget(QtGui.QTreeWidget):
     localsWidget,
     registersWidget
     ):
-    QtGui.QTreeWidget.__init__(self)
+    TreeWidget.__init__(self, "stack")
 
     self.__sourceCodeDisplayWidget = sourceCodeDisplayWidget
     self.__disassemblyDisplayWidget = disassemblyDisplayWidget
@@ -817,12 +823,12 @@ class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
     locationDesc = "%s" % (frame.GetFunctionName())
     self.setText(3, locationDesc)
 
-class ThreadsWidget(QtGui.QTreeWidget):
+class ThreadsWidget(TreeWidget):
   def __init__(
     self,
     stackWidget
     ):
-    QtGui.QTreeWidget.__init__(self)
+    TreeWidget.__init__(self, "threads")
 
     self.__stackWidget = stackWidget
 
@@ -914,105 +920,146 @@ outputWidget = OutputWidget()
 outputWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 outputWidget.setMinimumWidth(640)
 
-class SourcesFilterWidget(QtGui.QLineEdit):
-  filterChanged = QtCore.Signal(basestring)
-
+class NoFocusWidget(QtGui.QWidget):
   def __init__(self):
-    QtGui.QLineEdit.__init__(self)
+    QtGui.QWidget.__init__(self)
 
-    self.setFont(font)
+    self.setFocusPolicy(QtCore.Qt.NoFocus)
 
-    def returnPressed():
-      text = self.text()
-      self.selectAll()
-      self.filterChanged.emit(text)
-    self.returnPressed.connect(returnPressed)
+class SourcesWidget(NoFocusWidget):
 
-sourcesFilterWidget = SourcesFilterWidget()
-sourcesFilterLayout = QtGui.QHBoxLayout()
-sourcesFilterLayout.addWidget(QtGui.QLabel("Filter:"))
-sourcesFilterLayout.addWidget(sourcesFilterWidget)
+  class FilterWidget(QtGui.QLineEdit):
+    filterChanged = QtCore.Signal(basestring)
 
-class SourcesResultsWidget(QtGui.QTreeWidget):
-  def __init__(self):
-    QtGui.QTreeWidget.__init__(self)
+    def __init__(self):
+      QtGui.QLineEdit.__init__(self)
 
-    self.setIndentation(0)
-    if config['onlyShowKLCode']:
-      self.setHeaderLabels([
-        "Filename",
-        ])
-    else:
+      self.setFont(font)
+
+      def returnPressed():
+        text = self.text()
+        self.selectAll()
+        self.filterChanged.emit(text)
+      self.returnPressed.connect(returnPressed)
+
+    def showEvent(self, event):
+      QtGui.QLineEdit.showEvent(self, event)
+      self.setText(settings.value("sources/filter", ""))
+
+    def hideEvent(self, event):
+      settings.setValue("sources/filter", self.text())
+      QtGui.QLineEdit.hideEvent(self, event)
+
+  class KLOnlyWidget(QtGui.QCheckBox):
+    def __init__(self):
+      QtGui.QCheckBox.__init__(self, "Only KL Sources")
+
+    def showEvent(self, event):
+      QtGui.QCheckBox.showEvent(self, event)
+      checked = settings.value("sources/klOnly", False)
+      if checked:
+        self.setCheckState(QtCore.Qt.Checked)
+      else:
+        self.setCheckState(QtCore.Qt.Unchecked)
+
+    def hideEvent(self, event):
+      checked = self.checkState() == QtCore.Qt.Checked
+      settings.setValue("sources/klOnly", checked)
+      QtGui.QCheckBox.hideEvent(self, event)
+
+  class ResultsWidget(TreeWidget):
+    def __init__(self, filterWidget, klOnlyWidget):
+      TreeWidget.__init__(self, "sources")
+
+      self.__filterWidget = filterWidget;
+      self.__klOnlyWidget = klOnlyWidget;
+
+      self.setIndentation(0)
+
       self.setHeaderLabels([
         "Filename",
         "Directory"
         ])
 
-    def currentItemChanged(newItem, oldItem):
-      currentItem = self.currentItem()
-      if currentItem:
-        filename = currentItem.text(0)
-        pathname = filename
-        if config['onlyShowKLCode']:
-          pathname = filename
-        else:
+      def currentItemChanged(newItem, oldItem):
+        currentItem = self.currentItem()
+        if currentItem:
+          filename = currentItem.text(0)
           directory = currentItem.text(1)
-          pathname = os.path.join(directory, filename)
-        sourceCodeDisplayWidget.updateDisplay(pathname, 0)
-    self.currentItemChanged.connect(currentItemChanged)
+          if len(directory) > 0:
+            pathname = os.path.join(directory, filename)
+          else:
+            pathname = filename
+          sourceCodeDisplayWidget.updateDisplay(pathname, 0)
+      self.currentItemChanged.connect(currentItemChanged)
 
-    self.setFilter("")
+    def updateDisplay(self):
+      filterText = self.__filterWidget.text().strip()
+      klOnly = self.__klOnlyWidget.isChecked()
 
-  def setFilter(self, text):
-    self.__filter = text
+      count = 0
+      target = debugger.GetSelectedTarget()
+      if target and target.IsValid():
+        count = target.GetNumModules()
+
+      self.clear()
+      if klOnly:
+        for filename in fabricSourceCode:
+          if len(filterText) == 0 \
+              or (filename is not None and filterText in filename):
+            tableWidgetItem = QtGui.QTreeWidgetItem()
+            tableWidgetItem.setText(0, filename)
+            tableWidgetItem.setText(1, '')
+            self.addTopLevelItem(tableWidgetItem)
+      else:
+        for i in range(0, count):
+          module = target.GetModuleAtIndex(i)
+          compileUnitCount = module.GetNumCompileUnits()
+          for j in range(0, compileUnitCount):
+            compileUnit = module.GetCompileUnitAtIndex(j)
+            fileSpec = compileUnit.GetFileSpec()
+            filename = fileSpec.GetFilename()
+            if not filename:
+              continue
+            directory = fileSpec.GetDirectory()
+            if len(filterText) == 0 \
+                or (filename is not None and filterText in filename) \
+                or (directory is not None and filterText in directory):
+              tableWidgetItem = QtGui.QTreeWidgetItem()
+              tableWidgetItem.setText(0, filename)
+              tableWidgetItem.setText(1, directory)
+              self.addTopLevelItem(tableWidgetItem)
+      self.sortByColumn(0, QtCore.Qt.AscendingOrder)
+
+  def __init__(self):
+    NoFocusWidget.__init__(self)
+
+    filterWidget = self.FilterWidget()
+    klOnlyWidget = self.KLOnlyWidget()
+
+    filterLayout = QtGui.QGridLayout()
+    filterLayout.addWidget(QtGui.QLabel("Filter:"), 0, 0)
+    filterLayout.addWidget(filterWidget, 0, 1)
+    filterLayout.addWidget(klOnlyWidget, 1, 1)
+
+    resultsWidget = self.ResultsWidget(filterWidget, klOnlyWidget)
+    resultsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
+    filterWidget.filterChanged.connect(resultsWidget.updateDisplay)
+    klOnlyWidget.stateChanged.connect(resultsWidget.updateDisplay)
+
+    layout = QtGui.QVBoxLayout()
+    layout.addLayout(filterLayout)
+    layout.addWidget(resultsWidget)
+    self.setLayout(layout)
+
+    self.__resultsWidget = resultsWidget
+
     self.updateDisplay()
 
   def updateDisplay(self):
-    count = 0
-    target = debugger.GetSelectedTarget()
-    if target and target.IsValid():
-      process = target.GetProcess()
-      if process and process.IsValid():
-        count = target.GetNumModules()
+    self.__resultsWidget.updateDisplay()
 
-    self.clear()
-    if config['onlyShowKLCode']:
-      for filename in fabricSourceCode:
-        if len(self.__filter) == 0 \
-            or (filename is not None and self.__filter in filename):
-          tableWidgetItem = QtGui.QTreeWidgetItem()
-          tableWidgetItem.setText(0, filename)
-          tableWidgetItem.setText(1, '')
-          self.addTopLevelItem(tableWidgetItem)
-    else:
-      for i in range(0, count):
-        module = target.GetModuleAtIndex(i)
-        compileUnitCount = module.GetNumCompileUnits()
-        for j in range(0, compileUnitCount):
-          compileUnit = module.GetCompileUnitAtIndex(j)
-          fileSpec = compileUnit.GetFileSpec()
-          filename = fileSpec.GetFilename()
-          directory = fileSpec.GetDirectory()
-          if len(self.__filter) == 0 \
-              or (filename is not None and self.__filter in filename) \
-              or (directory is not None and self.__filter in directory):
-            tableWidgetItem = QtGui.QTreeWidgetItem()
-            tableWidgetItem.setText(0, filename)
-            tableWidgetItem.setText(1, directory)
-            self.addTopLevelItem(tableWidgetItem)
-    self.sortByColumn(0, QtCore.Qt.AscendingOrder)
-
-sourcesResultsWidget = SourcesResultsWidget()
-sourcesResultsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
-sourcesFilterWidget.filterChanged.connect(sourcesResultsWidget.setFilter)
-
-sourcesLayout = QtGui.QVBoxLayout()
-sourcesLayout.addLayout(sourcesFilterLayout)
-sourcesLayout.addWidget(sourcesResultsWidget)
-
-sourcesWidget = QtGui.QWidget()
-sourcesWidget.setFocusPolicy(QtCore.Qt.NoFocus)
-sourcesWidget.setLayout(sourcesLayout)
+sourcesWidget = SourcesWidget()
 
 class LLDBDisplay(AppendingTextWidget):
   def __init__(self):
@@ -1031,7 +1078,7 @@ class LLDBDisplay(AppendingTextWidget):
   def appendDebuggerErrorOutput(self, text):
     self.append(text, self.__failureOutputColor)
 
-class BreakpointsWidget(QtGui.QTreeWidget):
+class BreakpointsWidget(TreeWidget):
   class BP(object):
     def __init__(self, file, line):
       self.file = file
@@ -1040,7 +1087,7 @@ class BreakpointsWidget(QtGui.QTreeWidget):
       return a.file == b.file and a.line == b.line
 
   def __init__(self, sourceCodeDisplay):
-    QtGui.QTreeWidget.__init__(self)
+    TreeWidget.__init__(self, "breakpoints")
 
     self.__breakpoints = {}
     self.__sourceCodeDisplayWidget = sourceCodeDisplay
@@ -1051,11 +1098,6 @@ class BreakpointsWidget(QtGui.QTreeWidget):
       "Description",
     ])
 
-    settings.beginGroup("BreakpointsWidget")
-    self.setColumnWidth(0, int(settings.value("firstColumnWidth", 100)))
-    self.setColumnWidth(1, int(settings.value("secondColumnWidth", 300)))
-    settings.endGroup()
-
     def itemWasClicked(item, column):
       bpid = int(item.text(0))
       # [andrew 20140123] applies for internal breakpoints, which we will hide next version
@@ -1065,12 +1107,6 @@ class BreakpointsWidget(QtGui.QTreeWidget):
       self.__sourceCodeDisplayWidget.updateDisplay(bp.file, 0)
       self.markBreakpoints()
     self.itemClicked.connect(itemWasClicked)
-
-  def hideEvent(self, event):
-    settings.beginGroup("BreakpointsWidget")
-    settings.setValue("firstColumnWidth", self.columnWidth(0))
-    settings.endGroup()
-    QtGui.QTreeWidget.hideEvent(self, event)
 
   def toggleBreakpoint(self, filename, lineNum):
     # [andrew 20140123] FIXME incorrectly assume unique filenames
@@ -1338,11 +1374,6 @@ class MainWindow(QtGui.QMainWindow):
     self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, breakpointsWidget_dockWidget)
 
     self.restoreState(settings.value("mainWindow/state"))
-    localsWidget.header().restoreState(settings.value("locals/state"))
-    registersWidget.header().restoreState(settings.value("registers/state"))
-    stackWidget.header().restoreState(settings.value("stack/state"))
-    threadsWidget.header().restoreState(settings.value("threads/state"))
-    breakpointsWidget.header().restoreState(settings.value("breakpoints/state"))
 
     self.setTitle(name)
 
@@ -1351,11 +1382,6 @@ class MainWindow(QtGui.QMainWindow):
     self.setWindowTitle(title)
 
   def closeEvent(self, event):
-    settings.setValue("breakpoints/state", breakpointsWidget.header().saveState())
-    settings.setValue("threads/state", threadsWidget.header().saveState())
-    settings.setValue("stack/state", stackWidget.header().saveState())
-    settings.setValue("registers/state", registersWidget.header().saveState())
-    settings.setValue("locals/state", localsWidget.header().saveState())
     settings.setValue("mainWindow/state", self.saveState())
     settings.setValue("mainWindow/geometry", self.saveGeometry())
 
@@ -1460,7 +1486,7 @@ def handleDebuggerEvents():
       print 'Non-process event = %s' % (event)
   if eventCount > 0:
     threadsWidget.updateDisplay()
-    sourcesResultsWidget.updateDisplay()
+    sourcesWidget.updateDisplay()
     updateToolbarItems()
 
 timer = QtCore.QTimer()
@@ -1593,6 +1619,9 @@ else:
     lldbCommandWidget.executeCommand(
       "settings set -- target.run-args %s" % (" ".join(map(lambda arg: ("\"%s\"" % arg), arguments[1:])))
       )
+  lldbCommandWidget.executeCommand(
+    "process launch --stop-at-entry"
+    )
 lldbCommandWidget.setFocus()
 
 updateToolbarItems()
