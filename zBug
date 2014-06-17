@@ -1305,11 +1305,13 @@ def updateToolbarItems():
   for action in actions:
     action.setEnabled(False)
 
+  startAction.setEnabled(True)
   target = debugger.GetSelectedTarget()
   if target and target.IsValid():
     process = target.GetProcess()
     if process and process.IsValid() and process.GetState() != lldb.eStateExited:
       if process.GetState() == lldb.eStateStopped:
+        startAction.setText("Restart")
         continueAction.setEnabled(True)
         stepInAction.setEnabled(True)
         stepOverAction.setEnabled(True)
@@ -1317,7 +1319,7 @@ def updateToolbarItems():
       else:
         interruptAction.setEnabled(True)
     else:
-      startAction.setEnabled(True)
+      startAction.setText("Start")
 
 mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
