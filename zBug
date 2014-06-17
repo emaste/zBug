@@ -353,6 +353,7 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     self.updateDisplay(pathname, lineNumber)
 
 sourceCodeDisplayWidget = SourceCodeDisplayWidget()
+sourceCodeDisplayWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 sourceCodeDisplayWidget.setMinimumSize(640, 480)
 
 class DisassemblyDisplayWidget(CodeDisplayWidget):
@@ -415,6 +416,7 @@ class DisassemblyDisplayWidget(CodeDisplayWidget):
       self.setExtraSelections([])
 
 disassemblyDisplayWidget = DisassemblyDisplayWidget()
+disassemblyDisplayWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class ValueWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, includeExtras):
@@ -632,6 +634,7 @@ class LocalsWidget(QtGui.QTreeWidget):
     self.setEnabled(enabled)
 
 localsWidget = LocalsWidget()
+localsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class RegistersWidget(QtGui.QTreeWidget):
   def __init__(self):
@@ -690,6 +693,7 @@ class RegistersWidget(QtGui.QTreeWidget):
     self.setEnabled(enabled)
 
 registersWidget = RegistersWidget()
+registersWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class StackWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, frame):
@@ -800,6 +804,7 @@ stackWidget = StackWidget(
   localsWidget,
   registersWidget
   )
+stackWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, thread):
@@ -881,6 +886,7 @@ class ThreadsWidget(QtGui.QTreeWidget):
     self.setEnabled(enabled)
 
 threadsWidget = ThreadsWidget(stackWidget)
+threadsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class AppendingTextWidget(QtGui.QTextEdit):
   def __init__(self):
@@ -912,6 +918,7 @@ class OutputWidget(AppendingTextWidget):
     self.append(text, self.__stderrColor)
 
 outputWidget = OutputWidget()
+outputWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class SourcesFilterWidget(QtGui.QLineEdit):
   filterChanged = QtCore.Signal(basestring)
@@ -1002,6 +1009,7 @@ class SourcesResultsWidget(QtGui.QTreeWidget):
     self.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
 sourcesResultsWidget = SourcesResultsWidget()
+sourcesResultsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 sourcesFilterWidget.filterChanged.connect(sourcesResultsWidget.setFilter)
 
 sourcesLayout = QtGui.QVBoxLayout()
@@ -1009,6 +1017,7 @@ sourcesLayout.addLayout(sourcesFilterLayout)
 sourcesLayout.addWidget(sourcesResultsWidget)
 
 sourcesWidget = QtGui.QWidget()
+sourcesWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 sourcesWidget.setLayout(sourcesLayout)
 
 class LLDBDisplay(AppendingTextWidget):
@@ -1027,84 +1036,6 @@ class LLDBDisplay(AppendingTextWidget):
 
   def appendDebuggerErrorOutput(self, text):
     self.append(text, self.__failureOutputColor)
-
-lldbDisplay = LLDBDisplay()
-
-class LLDBCommandWidget(QtGui.QLineEdit):
-  def __init__(self, commandInterpreter, lldbDisplay):
-    QtGui.QLineEdit.__init__(self)
-
-    self.__commandInterpreter = commandInterpreter
-    self.__lldbDisplay = lldbDisplay
-    self.__history = []
-    self.__historyPos = 0
-
-    self.setFont(font)
-
-    def returnPressedCallback():
-      command = str(self.text())
-      self.clear()
-      if len(command) == 0 and len(self.__history) > 0:
-        command = self.__history[len(self.__history)-1]
-      self.executeCommand(command)
-    self.returnPressed.connect(returnPressedCallback)
-
-  def event(self, event):
-    if event.type() == QtCore.QEvent.Type.KeyPress:
-      key = event.key()
-      if key == QtCore.Qt.Key_Tab:
-        text = str(self.text())
-        stringList = lldb.SBStringList()
-        self.__commandInterpreter.HandleCompletion(
-          text, len(text), 1, -1, stringList
-          )
-        if stringList.GetSize() > 0:
-          self.setText(text + stringList.GetStringAtIndex(0))
-        return True
-      elif key == QtCore.Qt.Key_Up:
-        if self.__historyPos > 0:
-          self.__historyPos -= 1
-          self.setText(self.__history[self.__historyPos])
-          self.selectAll()
-          return True
-      elif key == QtCore.Qt.Key_Down:
-        if self.__historyPos < len(self.__history):
-          self.__historyPos += 1
-          if self.__historyPos == len(self.__history):
-            self.setText("")
-          else:
-            self.setText(self.__history[self.__historyPos])
-          self.selectAll()
-          return True
-    return QtGui.QLineEdit.event(self, event)
-
-  def executeCommand(self, command):
-    lldbDisplay.appendCommand(command)
-    return_obj = lldb.SBCommandReturnObject()
-    self.__commandInterpreter.HandleCommand(command, return_obj)
-    if return_obj.Succeeded():
-      self.__lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
-    else:
-      self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
-    self.__history.append(command)
-    self.__historyPos = len(self.__history)
-    stackWidget.updateDisplay()
-
-lldbCommandWidget = LLDBCommandWidget(
-  debugger.GetCommandInterpreter(),
-  lldbDisplay
-  )
-
-lldbCommandLayout = QtGui.QHBoxLayout()
-lldbCommandLayout.addWidget(QtGui.QLabel("lldb:"))
-lldbCommandLayout.addWidget(lldbCommandWidget)
-
-lldbLayout = QtGui.QVBoxLayout()
-lldbLayout.addWidget(lldbDisplay)
-lldbLayout.addLayout(lldbCommandLayout)
-
-lldbWidget = QtGui.QWidget()
-lldbWidget.setLayout(lldbLayout)
 
 class BreakpointsWidget(QtGui.QTreeWidget):
   class BP(object):
@@ -1181,7 +1112,83 @@ class BreakpointsWidget(QtGui.QTreeWidget):
     self.__sourceCodeDisplayWidget.markBreakpointLines(lines)
 
 breakpointsWidget = BreakpointsWidget(sourceCodeDisplayWidget)
+breakpointsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 sourceCodeDisplayWidget.setBreakpointsWidget(breakpointsWidget)
+
+lldbDisplay = LLDBDisplay()
+lldbDisplay.setFocusPolicy(QtCore.Qt.NoFocus)
+
+class LLDBCommandWidget(QtGui.QLineEdit):
+  def __init__(self, commandInterpreter, lldbDisplay):
+    QtGui.QLineEdit.__init__(self)
+
+    self.__commandInterpreter = commandInterpreter
+    self.__lldbDisplay = lldbDisplay
+    self.__history = []
+    self.__historyPos = 0
+
+    self.setFont(font)
+
+    def returnPressedCallback():
+      command = str(self.text())
+      self.clear()
+      if len(command) == 0 and len(self.__history) > 0:
+        command = self.__history[len(self.__history)-1]
+      self.executeCommand(command)
+    self.returnPressed.connect(returnPressedCallback)
+
+  def event(self, event):
+    if event.type() == QtCore.QEvent.Type.KeyPress:
+      key = event.key()
+      if key == QtCore.Qt.Key_Tab:
+        text = str(self.text())
+        stringList = lldb.SBStringList()
+        self.__commandInterpreter.HandleCompletion(
+          text, len(text), 1, -1, stringList
+          )
+        if stringList.GetSize() > 0:
+          self.setText(text + stringList.GetStringAtIndex(0))
+        return True
+      elif key == QtCore.Qt.Key_Up:
+        if self.__historyPos > 0:
+          self.__historyPos -= 1
+          self.setText(self.__history[self.__historyPos])
+          self.selectAll()
+          return True
+      elif key == QtCore.Qt.Key_Down:
+        if self.__historyPos < len(self.__history):
+          self.__historyPos += 1
+          if self.__historyPos == len(self.__history):
+            self.setText("")
+          else:
+            self.setText(self.__history[self.__historyPos])
+          self.selectAll()
+          return True
+    return QtGui.QLineEdit.event(self, event)
+
+  def executeCommand(self, command):
+    lldbDisplay.appendCommand(command)
+    return_obj = lldb.SBCommandReturnObject()
+    self.__commandInterpreter.HandleCommand(command, return_obj)
+    if return_obj.Succeeded():
+      self.__lldbDisplay.appendDebuggerOutput(return_obj.GetOutput())
+    else:
+      self.__lldbDisplay.appendDebuggerErrorOutput(return_obj.GetError())
+    self.__history.append(command)
+    self.__historyPos = len(self.__history)
+    breakpointsWidget.updateBreakpoints()
+    stackWidget.updateDisplay()
+
+lldbCommandWidget = LLDBCommandWidget(
+  debugger.GetCommandInterpreter(),
+  lldbDisplay
+  )
+
+lldbCommandLayout = QtGui.QHBoxLayout()
+lldbCommandLayout.setContentsMargins(4, 3, 4, 3)
+lldbCommandLayout.setSpacing(4)
+lldbCommandLayout.addWidget(QtGui.QLabel("lldb:"))
+lldbCommandLayout.addWidget(lldbCommandWidget)
 
 stackWidget_dockWidget = QtGui.QDockWidget()
 stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1197,11 +1204,6 @@ threadsWidget_dockWidget.setWidget(threadsWidget)
 # sourceCodeDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
 # sourceCodeDisplayWidget_dockWidget.setWindowTitle("Source Code")
 # sourceCodeDisplayWidget_dockWidget.setWidget(sourceCodeDisplayWidget)
-
-lldbWidget_dockWidget = QtGui.QDockWidget()
-lldbWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-lldbWidget_dockWidget.setWindowTitle("LLDB")
-lldbWidget_dockWidget.setWidget(lldbWidget)
 
 disassemblyDisplayWidget_dockWidget = QtGui.QDockWidget()
 disassemblyDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1328,9 +1330,23 @@ def updateToolbarItems():
     else:
       startAction.setEnabled(True)
 
+lldbLayout = QtGui.QVBoxLayout()
+lldbLayout.setContentsMargins(0, 0, 0, 0)
+lldbLayout.setSpacing(0)
+lldbLayout.addWidget(toolBar)
+lldbLayout.addWidget(lldbDisplay)
+lldbLayout.addLayout(lldbCommandLayout)
+
+lldbWidget = QtGui.QWidget()
+lldbWidget.setLayout(lldbLayout)
+
+lldbWidget_dockWidget = QtGui.QDockWidget()
+lldbWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+lldbWidget_dockWidget.setWindowTitle("LLDB")
+lldbWidget_dockWidget.setWidget(lldbWidget)
+
 mainWindow = MainWindow('Debugger')
 mainWindow.setCentralWidget(sourceCodeDisplayWidget)
-mainWindow.addToolBar(toolBar)
 mainWindow.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
 mainWindow.tabifyDockWidget(localsWidget_dockWidget, registersWidget_dockWidget)
 mainWindow.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
