@@ -64,9 +64,9 @@ app.setApplicationVersion("1.11.4")
 
 settings = QtCore.QSettings()
 
-font = QtGui.QFont()
-font.setPointSize(12)
-font.setFamily("Courier")
+font = QtGui.QFont("Monospace")
+font.setStyleHint(QtGui.QFont.TypeWriter)
+font.setPointSize(10)
 
 fabricSourceCode = {}
 
@@ -1583,7 +1583,7 @@ if options.pid is not None:
     "process attach --pid=%s" % options.pid
     )
   threadsWidget.updateDisplay()
-  sourcesResultsWidget.updateDisplay()
+  sourcesWidget.updateDisplay()
   updateToolbarItems()
 else:
   if len(arguments) < 1:
