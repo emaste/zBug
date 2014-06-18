@@ -1518,8 +1518,8 @@ exitAction = menu.addAction("E&xit")
 def exitCallback():
   mainWindow.close()
 exitAction.triggered.connect(exitCallback)
-menuBar = QtGui.QMenuBar()
-menuBar.addMenu(menu)
+
+mainWindow.menuBar().addMenu(menu)
 
 def handleDebuggerEvents():
   event = lldb.SBEvent()
