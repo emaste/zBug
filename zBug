@@ -424,6 +424,12 @@ class DisassemblyDisplayWidget(CodeDisplayWidget):
   def __init__(self):
     CodeDisplayWidget.__init__(self)
 
+  def saveState(self, settings):
+    pass
+
+  def restoreState(self, settings):
+    pass
+
   def frame(self):
     return self.__frame
 
@@ -623,23 +629,20 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
       self.treeWidget().expandItem(self)
 
 class TreeWidget(QtGui.QTreeWidget):
-  def __init__(self, settings, settingsName):
+  def __init__(self, settingsName):
     QtGui.QTreeWidget.__init__(self)
 
-    self.__settings = settings
     self.__settingsName = settingsName
 
-  def showEvent(self, event):
-    QtGui.QTreeWidget.showEvent(self, event)
-    self.header().restoreState(self.__settings.value("%s/state" % self.__settingsName))
+  def restoreState(self, settings):
+    self.header().restoreState(settings.value("%s/state" % self.__settingsName))
 
-  def hideEvent(self, event):
-    self.__settings.setValue("%s/state" % self.__settingsName, self.header().saveState())
-    QtGui.QTreeWidget.hideEvent(self, event)
+  def saveState(self, settings):
+    settings.setValue("%s/state" % self.__settingsName, self.header().saveState())
 
 class LocalsWidget(TreeWidget):
-  def __init__(self, settings):
-    TreeWidget.__init__(self, settings, "locals")
+  def __init__(self):
+    TreeWidget.__init__(self, "locals")
 
     self.__topLevelItems = {}
 
@@ -705,13 +708,13 @@ class LocalsWidget(TreeWidget):
 
     self.setEnabled(enabled)
 
-localsWidget = LocalsWidget(settings)
+localsWidget = LocalsWidget()
 localsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class RegistersWidget(TreeWidget):
 
-  def __init__(self, settings):
-    TreeWidget.__init__(self, settings, "registers")
+  def __init__(self):
+    TreeWidget.__init__(self, "registers")
 
     self.__topLevelItems = {}
 
@@ -755,7 +758,7 @@ class RegistersWidget(TreeWidget):
 
     self.setEnabled(enabled)
 
-registersWidget = RegistersWidget(settings)
+registersWidget = RegistersWidget()
 registersWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class StackWidgetItem(QtGui.QTreeWidgetItem):
@@ -784,15 +787,13 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
 class StackWidget(TreeWidget):
   def __init__(
     self,
-    settings,
     sourceCodeDisplayWidget,
     disassemblyDisplayWidget,
     localsWidget,
     registersWidget
     ):
-    TreeWidget.__init__(self, settings, "stack")
+    TreeWidget.__init__(self, "stack")
 
-    self.__settings = settings
     self.__sourceCodeDisplayWidget = sourceCodeDisplayWidget
     self.__disassemblyDisplayWidget = disassemblyDisplayWidget
     self.__localsWidget = localsWidget
@@ -869,7 +870,6 @@ class StackWidget(TreeWidget):
     self.setEnabled(enabled)
 
 stackWidget = StackWidget(
-  settings,
   sourceCodeDisplayWidget,
   disassemblyDisplayWidget,
   localsWidget,
@@ -900,12 +900,8 @@ class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
     self.setFont(3, fixedFont)
 
 class ThreadsWidget(TreeWidget):
-  def __init__(
-    self,
-    settings,
-    stackWidget
-    ):
-    TreeWidget.__init__(self, settings, "threads")
+  def __init__(self, stackWidget):
+    TreeWidget.__init__(self, "threads")
 
     self.__stackWidget = stackWidget
 
@@ -961,7 +957,7 @@ class ThreadsWidget(TreeWidget):
         enabled = True
     self.setEnabled(enabled)
 
-threadsWidget = ThreadsWidget(settings, stackWidget)
+threadsWidget = ThreadsWidget(stackWidget)
 threadsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 
 class AppendingTextWidget(QtGui.QTextEdit):
@@ -988,6 +984,12 @@ class OutputWidget(AppendingTextWidget):
     self.__stdoutColor = QtGui.QColor(QtCore.Qt.black)
     self.__stderrColor = QtGui.QColor(QtCore.Qt.red).lighter(50)
 
+  def saveState(self, settings):
+    pass
+
+  def restoreState(self, settings):
+    pass
+
   def appendStdout(self, text):
     self.append(text, self.__stdoutColor)
 
@@ -1009,10 +1011,8 @@ class SourcesWidget(NoFocusWidget):
   class FilterWidget(QtGui.QLineEdit):
     filterChanged = QtCore.Signal(basestring)
 
-    def __init__(self, settings):
+    def __init__(self):
       QtGui.QLineEdit.__init__(self)
-
-      self.__settings = settings
 
       self.setFont(preferences.fixedFont())
       preferences.fixedFontChanged.connect(self.setFont)
@@ -1023,55 +1023,49 @@ class SourcesWidget(NoFocusWidget):
         self.filterChanged.emit(text)
       self.returnPressed.connect(returnPressed)
 
-    def showEvent(self, event):
-      QtGui.QLineEdit.showEvent(self, event)
-      self.setText(self.__settings.value("sources/filter", ""))
+    def restoreState(self, settings):
+      self.setText(settings.value("sources/filter", ""))
 
-    def hideEvent(self, event):
-      self.__settings.setValue("sources/filter", self.text())
-      QtGui.QLineEdit.hideEvent(self, event)
+    def saveState(self, settings):
+      settings.setValue("sources/filter", self.text())
 
   class KLTypeWidget(QtGui.QCheckBox):
-    def __init__(self, settings):
+    def __init__(self):
       QtGui.QCheckBox.__init__(self, "KL")
 
       self.__settings = settings
 
-    def showEvent(self, event):
-      QtGui.QCheckBox.showEvent(self, event)
-      checked = self.__settings.value("sources/types/kl", False)
+    def restoreState(self, settings):
+      checked = settings.value("sources/types/kl", False)
       if checked:
         self.setCheckState(QtCore.Qt.Checked)
       else:
         self.setCheckState(QtCore.Qt.Unchecked)
 
-    def hideEvent(self, event):
+    def saveState(self, settings):
       checked = self.checkState() == QtCore.Qt.Checked
-      self.__settings.setValue("sources/types/kl", checked)
-      QtGui.QCheckBox.hideEvent(self, event)
+      settings.setValue("sources/types/kl", checked)
 
   class RegTypeWidget(QtGui.QCheckBox):
-    def __init__(self, settings):
+    def __init__(self):
       QtGui.QCheckBox.__init__(self, "Regular")
 
       self.__settings = settings
 
-    def showEvent(self, event):
-      QtGui.QCheckBox.showEvent(self, event)
-      checked = self.__settings.value("sources/types/reg", False)
+    def restoreState(self, settings):
+      checked = settings.value("sources/types/reg", False)
       if checked:
         self.setCheckState(QtCore.Qt.Checked)
       else:
         self.setCheckState(QtCore.Qt.Unchecked)
 
-    def hideEvent(self, event):
+    def saveState(self, settings):
       checked = self.checkState() == QtCore.Qt.Checked
-      self.__settings.setValue("sources/types/reg", checked)
-      QtGui.QCheckBox.hideEvent(self, event)
+      settings.setValue("sources/types/reg", checked)
 
   class ResultsWidget(TreeWidget):
-    def __init__(self, settings, filterWidget, regTypeWidget, klTypeWidget):
-      TreeWidget.__init__(self, settings, "sources")
+    def __init__(self, filterWidget, regTypeWidget, klTypeWidget):
+      TreeWidget.__init__(self, "sources")
 
       self.__filterWidget = filterWidget;
       self.__regTypeWidget = regTypeWidget;
@@ -1135,42 +1129,54 @@ class SourcesWidget(NoFocusWidget):
               self.addTopLevelItem(tableWidgetItem)
       self.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
-  def __init__(self, settings):
+  def __init__(self):
     NoFocusWidget.__init__(self)
 
-    regTypeWidget = self.RegTypeWidget(settings)
-    klTypeWidget = self.KLTypeWidget(settings)
+    self.__regTypeWidget = self.RegTypeWidget()
+    self.__klTypeWidget = self.KLTypeWidget()
     typeLayout = QtGui.QHBoxLayout()
     typeLayout.addWidget(QtGui.QLabel("Source types:"))
-    typeLayout.addWidget(regTypeWidget)
-    typeLayout.addWidget(klTypeWidget)
+    typeLayout.addWidget(self.__regTypeWidget)
+    typeLayout.addWidget(self.__klTypeWidget)
 
-    filterWidget = self.FilterWidget(settings)
+    self.__filterWidget = self.FilterWidget()
 
     filterLayout = QtGui.QGridLayout()
     filterLayout.addWidget(QtGui.QLabel("Filter:"), 0, 0)
-    filterLayout.addWidget(filterWidget, 0, 1)
+    filterLayout.addWidget(self.__filterWidget, 0, 1)
     filterLayout.addLayout(typeLayout, 1, 1)
 
-    resultsWidget = self.ResultsWidget(settings, filterWidget, regTypeWidget, klTypeWidget)
-    resultsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
-    filterWidget.filterChanged.connect(resultsWidget.updateDisplay)
-    regTypeWidget.stateChanged.connect(resultsWidget.updateDisplay)
-    klTypeWidget.stateChanged.connect(resultsWidget.updateDisplay)
+    self.__resultsWidget = self.ResultsWidget(
+      self.__filterWidget,
+      self.__regTypeWidget,
+      self.__klTypeWidget
+      )
+    self.__resultsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
+    self.__filterWidget.filterChanged.connect(self.__resultsWidget.updateDisplay)
+    self.__regTypeWidget.stateChanged.connect(self.__resultsWidget.updateDisplay)
+    self.__klTypeWidget.stateChanged.connect(self.__resultsWidget.updateDisplay)
 
     layout = QtGui.QVBoxLayout()
     layout.addLayout(filterLayout)
-    layout.addWidget(resultsWidget)
+    layout.addWidget(self.__resultsWidget)
     self.setLayout(layout)
 
-    self.__resultsWidget = resultsWidget
-
     self.updateDisplay()
+
+  def restoreState(self, settings):
+    self.__regTypeWidget.restoreState(settings)
+    self.__klTypeWidget.restoreState(settings)
+    self.__filterWidget.restoreState(settings)
+
+  def saveState(self, settings):
+    self.__regTypeWidget.saveState(settings)
+    self.__klTypeWidget.saveState(settings)
+    self.__filterWidget.saveState(settings)
 
   def updateDisplay(self):
     self.__resultsWidget.updateDisplay()
 
-sourcesWidget = SourcesWidget(settings)
+sourcesWidget = SourcesWidget()
 
 class LLDBDisplay(AppendingTextWidget):
   def __init__(self):
@@ -1179,6 +1185,12 @@ class LLDBDisplay(AppendingTextWidget):
     self.__commandColor = QtGui.QColor(QtCore.Qt.blue).lighter(50)
     self.__successOutputColor = QtGui.QColor(QtCore.Qt.green).lighter(50)
     self.__failureOutputColor = QtGui.QColor(QtCore.Qt.green).lighter(50)
+
+  def saveState(self, settings):
+    pass
+
+  def restoreState(self, settings):
+    pass
 
   def appendCommand(self, text):
     self.append("> " + text + "\n", self.__commandColor)
@@ -1197,8 +1209,8 @@ class BreakpointsWidget(TreeWidget):
     def __eq__(a, b):
       return a.pathname == b.pathname and a.line == b.line
 
-  def __init__(self, settings, sourceCodeDisplay):
-    TreeWidget.__init__(self, settings, "breakpoints")
+  def __init__(self, sourceCodeDisplay):
+    TreeWidget.__init__(self, "breakpoints")
 
     self.__breakpoints = {}
     self.__sourceCodeDisplayWidget = sourceCodeDisplay
@@ -1251,7 +1263,7 @@ class BreakpointsWidget(TreeWidget):
         lines.append(bp.line-1)
     self.__sourceCodeDisplayWidget.markBreakpointLines(lines)
 
-breakpointsWidget = BreakpointsWidget(settings, sourceCodeDisplayWidget)
+breakpointsWidget = BreakpointsWidget(sourceCodeDisplayWidget)
 breakpointsWidget.setFocusPolicy(QtCore.Qt.NoFocus)
 sourceCodeDisplayWidget.setBreakpointsWidget(breakpointsWidget)
 
@@ -1277,6 +1289,12 @@ class LLDBCommandWidget(QtGui.QLineEdit):
         command = self.__history[len(self.__history)-1]
       self.executeCommand(command)
     self.returnPressed.connect(returnPressedCallback)
+
+  def saveState(self, settings):
+    pass
+
+  def restoreState(self, settings):
+    pass
 
   def event(self, event):
     if event.type() == QtCore.QEvent.Type.KeyPress:
@@ -1423,6 +1441,7 @@ class MainWindow(QtGui.QMainWindow):
     self.setTabPosition(QtCore.Qt.AllDockWidgetAreas, QtGui.QTabWidget.South)
     self.setCentralWidget(sourceCodeDisplayWidget)
 
+    localsWidget.restoreState(settings)
     localsWidget_dockWidget = QtGui.QDockWidget()
     localsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
     localsWidget_dockWidget.setObjectName("Locals")
@@ -1430,6 +1449,7 @@ class MainWindow(QtGui.QMainWindow):
     localsWidget_dockWidget.setWidget(localsWidget)
     self.addDockWidget(QtCore.Qt.TopDockWidgetArea, localsWidget_dockWidget)
 
+    registersWidget.restoreState(settings)
     registersWidget_dockWidget = QtGui.QDockWidget()
     registersWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
     registersWidget_dockWidget.setObjectName("Registers")
@@ -1437,6 +1457,7 @@ class MainWindow(QtGui.QMainWindow):
     registersWidget_dockWidget.setWidget(registersWidget)
     self.addDockWidget(QtCore.Qt.TopDockWidgetArea, registersWidget_dockWidget)
 
+    stackWidget.restoreState(settings)
     stackWidget_dockWidget = QtGui.QDockWidget()
     stackWidget_dockWidget.setObjectName("Stack")
     stackWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1444,6 +1465,7 @@ class MainWindow(QtGui.QMainWindow):
     stackWidget_dockWidget.setWidget(stackWidget)
     self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, stackWidget_dockWidget)
 
+    threadsWidget.restoreState(settings)
     threadsWidget_dockWidget = QtGui.QDockWidget()
     threadsWidget_dockWidget.setObjectName("Threads")
     threadsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1451,6 +1473,7 @@ class MainWindow(QtGui.QMainWindow):
     threadsWidget_dockWidget.setWidget(threadsWidget)
     self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, threadsWidget_dockWidget)
 
+    sourcesWidget.restoreState(settings)
     sourcesWidget_dockWidget = QtGui.QDockWidget()
     sourcesWidget_dockWidget.setObjectName("Sources")
     sourcesWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1458,6 +1481,7 @@ class MainWindow(QtGui.QMainWindow):
     sourcesWidget_dockWidget.setWidget(sourcesWidget)
     self.addDockWidget(QtCore.Qt.RightDockWidgetArea, sourcesWidget_dockWidget)
 
+    disassemblyDisplayWidget.restoreState(settings)
     disassemblyDisplayWidget_dockWidget = QtGui.QDockWidget()
     disassemblyDisplayWidget_dockWidget.setObjectName("Disassembly")
     disassemblyDisplayWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
@@ -1465,6 +1489,7 @@ class MainWindow(QtGui.QMainWindow):
     disassemblyDisplayWidget_dockWidget.setWidget(disassemblyDisplayWidget)
     self.addDockWidget(QtCore.Qt.RightDockWidgetArea, disassemblyDisplayWidget_dockWidget)
 
+    # lldbWidget.restoreState(settings)
     lldbWidget_dockWidget = QtGui.QDockWidget()
     lldbWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
     lldbWidget_dockWidget.setWindowTitle("LLDB")
@@ -1472,6 +1497,7 @@ class MainWindow(QtGui.QMainWindow):
     lldbWidget_dockWidget.setWidget(lldbWidget)
     self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, lldbWidget_dockWidget)
 
+    outputWidget.restoreState(settings)
     outputWidget_dockWidget = QtGui.QDockWidget()
     outputWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
     outputWidget_dockWidget.setObjectName("Output")
@@ -1479,13 +1505,7 @@ class MainWindow(QtGui.QMainWindow):
     outputWidget_dockWidget.setWidget(outputWidget)
     self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, outputWidget_dockWidget)
 
-    breakpointsWidget_dockWidget = QtGui.QDockWidget()
-    breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
-    breakpointsWidget_dockWidget.setObjectName("Breakpoints")
-    breakpointsWidget_dockWidget.setWindowTitle("Breakpoints")
-    breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
-    self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, breakpointsWidget_dockWidget)
-
+    breakpointsWidget.restoreState(settings)
     breakpointsWidget_dockWidget = QtGui.QDockWidget()
     breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
     breakpointsWidget_dockWidget.setObjectName("Breakpoints")
@@ -1503,6 +1523,15 @@ class MainWindow(QtGui.QMainWindow):
 
   def closeEvent(self, event):
     self.__settings.setValue("mainWindow/state", self.saveState())
+    breakpointsWidget.saveState(settings)
+    outputWidget.saveState(settings)
+    # lldbWidget.saveState(settings)
+    disassemblyDisplayWidget.saveState(settings)
+    sourcesWidget.saveState(settings)
+    threadsWidget.saveState(settings)
+    stackWidget.saveState(settings)
+    registersWidget.saveState(settings)
+    localsWidget.saveState(settings)
     self.__settings.setValue("mainWindow/geometry", self.saveGeometry())
 
 mainWindow = MainWindow(settings, 'Debugger')
