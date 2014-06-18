@@ -64,9 +64,74 @@ app.setApplicationVersion("1.1")
 
 settings = QtCore.QSettings()
 
-font = QtGui.QFont("Monospace")
-font.setStyleHint(QtGui.QFont.TypeWriter)
-font.setPointSize(10)
+class Preferences(QtCore.QObject):
+
+  class Dialog(QtGui.QDialog):
+
+    def __init__(self, parent, preferences):
+      QtGui.QDialog.__init__(self, parent)
+
+      self.__preferences = preferences
+
+      gridLayout = QtGui.QGridLayout()
+
+      fixedFont = preferences.fixedFont()
+      gridLayout.addWidget(QtGui.QLabel("Fixed-width font:"), 0, 0)
+      self.__fixedFontDescLabel = QtGui.QLabel(fixedFont.toString())
+      self.__fixedFontDescLabel.setFont(fixedFont)
+      gridLayout.addWidget(self.__fixedFontDescLabel, 0, 1)
+      changeFixedFontButton = QtGui.QPushButton("Change")
+      changeFixedFontButton.clicked.connect(self.changeFixedFont)
+      gridLayout.addWidget(changeFixedFontButton, 0, 2)
+
+      layout = QtGui.QVBoxLayout()
+      layout.addLayout(gridLayout)
+      closeButton = QtGui.QPushButton("Close")
+      closeButton.clicked.connect(self.hide)
+      layout.addWidget(closeButton)
+    
+      self.setLayout(layout)
+
+    def changeFixedFont(self):
+      (newFixedFont, ok) = QtGui.QFontDialog.getFont(self.__preferences.fixedFont(), self)
+      if ok:
+        self.__preferences.setFixedFont(newFixedFont)
+        self.__fixedFontDescLabel.setText(newFixedFont.toString())
+        self.__fixedFontDescLabel.setFont(newFixedFont)
+
+  def __init__(self, settings):
+    QtCore.QObject.__init__(self)
+
+    self.__settings = settings
+    self.__dialog = None
+
+    self.__fixedFont = QtGui.QFont()
+    fixedFontString = settings.value("fixedFont")
+    if fixedFontString:
+      self.__fixedFont.fromString(fixedFontString)
+    else:
+      self.__fixedFont.setFamily("Monospace")
+      self.__fixedFont.setStyleHint(QtGui.QFont.TypeWriter)
+      self.__fixedFont.setPointSize(10)
+
+  fixedFontChanged = QtCore.Signal(QtGui.QFont)
+
+  def fixedFont(self):
+    return self.__fixedFont
+
+  def setFixedFont(self, fixedFont):
+    self.__fixedFont = fixedFont
+    settings.setValue("fixedFont", fixedFont.toString())
+    self.fixedFontChanged.emit(fixedFont)
+
+  def showDialog(self, parent):
+    if not self.__dialog:
+      self.__dialog = Preferences.Dialog(parent, self)
+    self.__dialog.show()
+    self.__dialog.raise_()
+    self.__dialog.activateWindow()
+
+preferences = Preferences(settings)
 
 fabricSourceCode = {}
 
@@ -89,7 +154,8 @@ class CodeDisplayWidget(QtGui.QPlainTextEdit):
     QtGui.QPlainTextEdit.__init__(self)
 
     self.setReadOnly(True)
-    self.setFont(font)
+    self.setFont(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFont)
     self.setCenterOnScroll(True)
 
     lineNumberArea = LineNumberArea(self)
@@ -182,7 +248,8 @@ class SourceCodeDisplayWidget(QtGui.QPlainTextEdit):
     self.pathname = None
 
     self.setReadOnly(True)
-    self.setFont(font)
+    self.setFont(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFont)
     self.setCenterOnScroll(True)
 
     lineNumberArea = LineNumberArea(self)
@@ -427,12 +494,17 @@ class ValueWidgetItem(QtGui.QTreeWidgetItem):
     self.setFlags(
       QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEditable
       )
-    self.setFont(0, font)
-    self.setFont(1, font)
-    if includeExtras:
-      self.setFont(2, font)
+    
+    self.setFonts(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFonts)
 
     self.__dynamicColor = QtGui.QColor(QtCore.Qt.red).lighter(190)
+
+  def setFonts(self, fixedFont):
+    self.setFont(0, fixedFont)
+    self.setFont(1, fixedFont)
+    if self.__includeExtras:
+      self.setFont(2, fixedFont)
 
   def setValue(self, value):
     self.__value = value
@@ -692,10 +764,10 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
 
     self.__frame = frame
 
-    self.setFont(0, font)
-    self.setFont(1, font)
+    self.setFonts(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFonts)
+
     self.setTextAlignment(1, QtCore.Qt.AlignRight)
-    self.setFont(2, font)
 
     self.setText(0, "%d" % frame.GetFrameID())
     self.setText(1, "%#x" % frame.GetPC())
@@ -703,6 +775,11 @@ class StackWidgetItem(QtGui.QTreeWidgetItem):
 
   def frame(self):
     return self.__frame
+
+  def setFonts(self, fixedFont):
+    self.setFont(0, fixedFont)
+    self.setFont(1, fixedFont)
+    self.setFont(2, fixedFont)
 
 class StackWidget(TreeWidget):
   def __init__(
@@ -804,10 +881,8 @@ class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
   def __init__(self, thread):
     QtGui.QTreeWidgetItem.__init__(self)
 
-    self.setFont(0, font)
-    self.setFont(1, font)
-    self.setFont(2, font)
-    self.setFont(3, font)
+    self.setFonts(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFonts)
 
     process = thread.GetProcess()
     frame = thread.GetFrameAtIndex(0)
@@ -817,6 +892,12 @@ class ThreadsWidgetItem(QtGui.QTreeWidgetItem):
     self.setText(2, thread.GetName())
     locationDesc = "%s" % (frame.GetFunctionName())
     self.setText(3, locationDesc)
+
+  def setFonts(self, fixedFont):
+    self.setFont(0, fixedFont)
+    self.setFont(1, fixedFont)
+    self.setFont(2, fixedFont)
+    self.setFont(3, fixedFont)
 
 class ThreadsWidget(TreeWidget):
   def __init__(
@@ -888,7 +969,8 @@ class AppendingTextWidget(QtGui.QTextEdit):
     QtGui.QTextEdit.__init__(self)
 
     self.setReadOnly(True)
-    self.setFont(font)
+    self.setFont(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFont)
 
   def append(self, text, color):
     self.setTextColor(color)
@@ -932,7 +1014,8 @@ class SourcesWidget(NoFocusWidget):
 
       self.__settings = settings
 
-      self.setFont(font)
+      self.setFont(preferences.fixedFont())
+      preferences.fixedFontChanged.connect(self.setFont)
 
       def returnPressed():
         text = self.text()
@@ -1184,7 +1267,8 @@ class LLDBCommandWidget(QtGui.QLineEdit):
     self.__history = []
     self.__historyPos = 0
 
-    self.setFont(font)
+    self.setFont(preferences.fixedFont())
+    preferences.fixedFontChanged.connect(self.setFont)
 
     def returnPressedCallback():
       command = str(self.text())
@@ -1402,6 +1486,13 @@ class MainWindow(QtGui.QMainWindow):
     breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
     self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, breakpointsWidget_dockWidget)
 
+    breakpointsWidget_dockWidget = QtGui.QDockWidget()
+    breakpointsWidget_dockWidget.setFeatures(QtGui.QDockWidget.DockWidgetMovable|QtGui.QDockWidget.DockWidgetFloatable)
+    breakpointsWidget_dockWidget.setObjectName("Breakpoints")
+    breakpointsWidget_dockWidget.setWindowTitle("Breakpoints")
+    breakpointsWidget_dockWidget.setWidget(breakpointsWidget)
+    self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, breakpointsWidget_dockWidget)
+
     self.restoreState(settings.value("mainWindow/state"))
 
     self.setTitle(name)
@@ -1416,6 +1507,19 @@ class MainWindow(QtGui.QMainWindow):
 
 mainWindow = MainWindow(settings, 'Debugger')
 mainWindow.show()
+
+menu = QtGui.QMenu("&File")
+preferencesAction = menu.addAction("Preferences")
+def preferencesCallback():
+  preferences.showDialog(mainWindow)
+preferencesAction.triggered.connect(preferencesCallback)
+menu.addSeparator()
+exitAction = menu.addAction("E&xit")
+def exitCallback():
+  mainWindow.close()
+exitAction.triggered.connect(exitCallback)
+menuBar = QtGui.QMenuBar()
+menuBar.addMenu(menu)
 
 def handleDebuggerEvents():
   event = lldb.SBEvent()
