@@ -30,9 +30,11 @@ To use zBug, you must meet the following requirements:
 Installation
 ------------
 
-Simply copy the single file "zBug" to somewhere on your PATH and ensure that it is executable.  You must also ensure that the PySide and LLDB Python modules are on your PYTHONPATH.
+Just make sure that the root of the checkout of the zBug repository is on your PATH.  You must also ensure that the PySide and LLDB Python modules are on your PYTHONPATH.
 
 - On OS X, the LLDB Python module that comes with Xcode is not on the PYTHONPATH by default.  However, zBug should automatically find the LLDB module anyway!
+
+zBug expects that the `rsrc` folder, containing various resources such as icons, is located in the same directory as the script itself.  Thus, if you copy zBug elsewhere, make sure you copy this folder and its contents as well.
 
 Using zBug
 ----------
@@ -42,3 +44,7 @@ Currently, zBug must be started from the command line.  Simply follow it with th
     zBug ./myTestProg optionalArgument
 
 You will be presented with a window that contains all of the various debugging Windows; at the centre is a Window that provides a command prompt (marked 'lldb:') and the debugger log window.  Simply execute commands from this command prompt.
+
+You can also run zBug with the `--pid` option to have zBug attach to an existing process.
+
+To see a list of all options, run `zBug --help`.
